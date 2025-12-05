@@ -18,9 +18,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copiar el código del bot
 COPY bot.py .
 
-# Copiar cookies si existe (opcional, no falla si no existe)
-COPY cookies.txt /app/cookies.txt 2>/dev/null || true
-COPY cookies_*.txt /app/ 2>/dev/null || true
+# Copiar cookies si existe (el workflow crea uno vacío si no existe)
+COPY cookies.txt /app/cookies.txt
 
 # Crear directorio para descargas
 RUN mkdir -p /downloads
