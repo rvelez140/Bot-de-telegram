@@ -110,6 +110,10 @@ class MediaDownloader:
             'format': 'best',
             'outtmpl': output_path,
             'quiet': False,
+            'cookiefile': '/app/cookies.txt',  # Soporte para cuentas privadas
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            },
         }
         
         try:
@@ -151,6 +155,15 @@ class MediaDownloader:
             'extract_flat': False,
             'ignoreerrors': False,
             'nocheckcertificate': True,
+            # Soporte para cuentas privadas
+            'cookiefile': '/app/cookies.txt',  # Si existe, usar cookies
+            # Headers para evitar bloqueos
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'en-us,en;q=0.5',
+                'Sec-Fetch-Mode': 'navigate',
+            },
         }
         
         platform = self.get_platform(url)
@@ -158,10 +171,16 @@ class MediaDownloader:
         # Configuraciones específicas por plataforma
         if platform == 'tiktok':
             ydl_opts['format'] = 'best[ext=mp4]/best'
+            # TikTok específico
+            ydl_opts['extractor_args'] = {'tiktok': {'api_hostname': 'api22-normal-c-useast2a.tiktokv.com'}}
         elif platform == 'instagram':
             ydl_opts['format'] = 'best[ext=mp4]/best'
+            # Instagram necesita cookies para cuentas privadas
         elif platform == 'youtube':
             ydl_opts['format'] = 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best'
+        elif platform == 'twitter':
+            # Twitter/X configuración mejorada
+            ydl_opts['format'] = 'best'
         
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
