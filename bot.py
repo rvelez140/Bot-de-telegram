@@ -110,11 +110,15 @@ class MediaDownloader:
             'format': 'best',
             'outtmpl': output_path,
             'quiet': False,
-            'cookiefile': '/app/cookies.txt',  # Soporte para cuentas privadas
             'http_headers': {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
             },
         }
+        
+        # Soporte para cuentas privadas (solo si cookies.txt existe)
+        cookies_file = '/app/cookies.txt'
+        if os.path.exists(cookies_file) and os.path.getsize(cookies_file) > 10:
+            ydl_opts['cookiefile'] = cookies_file
         
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -155,8 +159,6 @@ class MediaDownloader:
             'extract_flat': False,
             'ignoreerrors': False,
             'nocheckcertificate': True,
-            # Soporte para cuentas privadas
-            'cookiefile': '/app/cookies.txt',  # Si existe, usar cookies
             # Headers para evitar bloqueos
             'http_headers': {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -165,6 +167,11 @@ class MediaDownloader:
                 'Sec-Fetch-Mode': 'navigate',
             },
         }
+        
+        # Soporte para cuentas privadas (solo si cookies.txt existe)
+        cookies_file = '/app/cookies.txt'
+        if os.path.exists(cookies_file) and os.path.getsize(cookies_file) > 10:
+            ydl_opts['cookiefile'] = cookies_file
         
         platform = self.get_platform(url)
         
