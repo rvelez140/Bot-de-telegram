@@ -1,12 +1,14 @@
 # 🐳 Configuración de Docker para Bot de Telegram
 
-Esta guía te ayudará a desplegar el bot de descarga de videos de Telegram usando Docker.
+Esta guía te ayudará a desplegar el bot de descarga y transcripción de videos de Telegram usando Docker.
 
 ## 📋 Requisitos Previos
 
 - Docker instalado (versión 20.10 o superior)
 - Docker Compose instalado (versión 1.29 o superior)
 - Token de bot de Telegram (obtenerlo de @BotFather)
+- **Mínimo 2GB de RAM** (recomendado para transcripción)
+- **Espacio en disco:** Al menos 2GB libres
 
 ## 🚀 Inicio Rápido
 
@@ -157,6 +159,30 @@ Busca errores en los logs. Los problemas comunes son:
 rm -rf ./downloads/*
 ```
 
+### La transcripción tarda mucho o falla
+
+La transcripción puede tardar varios minutos dependiendo de:
+- Duración del video
+- Recursos disponibles del servidor
+- Primera vez (descarga el modelo de Whisper)
+
+**Soluciones:**
+1. Aumentar memoria asignada en docker-compose.yml:
+   ```yaml
+   memory: 4G  # en lugar de 2G
+   ```
+2. La primera transcripción tarda más (descarga el modelo)
+3. Verifica que tienes suficiente espacio en disco
+
+### Timeout en transcripciones largas
+
+Para videos muy largos (>1 hora), puedes aumentar el timeout:
+```bash
+docker-compose down
+# Editar docker-compose.yml y aumentar memoria
+docker-compose up -d
+```
+
 ## 🔐 Seguridad
 
 - **NUNCA** compartas tu token de Telegram
@@ -196,6 +222,25 @@ El bot puede descargar videos de:
 - ✅ **YouTube** (hasta 1080p)
 - ✅ **X/Twitter** (con configuración mejorada)
 - ✅ **Instagram** (posts y reels)
+
+## ✨ Funcionalidades
+
+### 📥 Descarga de Videos
+- Descarga videos en alta calidad (hasta 1080p)
+- Videos de TikTok sin marca de agua cuando es posible
+- Optimizado para Telegram (límite 50MB)
+
+### 📝 Transcripción de Audio
+- Transcripción automática usando Whisper AI
+- Soporte multiidioma (auto-detección)
+- Alta precisión en la transcripción
+- División automática de transcripciones largas
+
+### ⏱️ Opciones Interactivas
+Cuando envías un enlace, tienes **30 segundos** para elegir:
+1. 📥 **Solo Descargar** - Recibe solo el video
+2. 📝 **Solo Transcribir** - Recibe solo la transcripción del audio
+3. 📥+📝 **Descargar y Transcribir** - Recibe ambos
 
 ## 📝 Notas Adicionales
 
