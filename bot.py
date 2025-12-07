@@ -175,6 +175,12 @@ class VideoDownloader:
             },
         }
 
+        # Soporte para cookies (cuentas privadas y mejor acceso)
+        cookies_file = '/app/cookies.txt'
+        if os.path.exists(cookies_file) and os.path.getsize(cookies_file) > 100:
+            logger.info("📝 Usando archivo de cookies para autenticación")
+            ydl_opts['cookiefile'] = cookies_file
+
         platform = self.get_platform(url)
 
         # Configuraciones específicas por plataforma
@@ -193,13 +199,14 @@ class VideoDownloader:
             # Añadir extractor args específicos para Twitter
             ydl_opts['extractor_args'] = {
                 'twitter': {
-                    'api': ['syndication', 'graphql']
+                    'api': ['syndication', 'graphql', 'legacy']
                 }
             }
-            # Intentar diferentes métodos de extracción
-            ydl_opts['cookiesfrombrowser'] = None  # No usar cookies del navegador por defecto
             # Forzar IPv4 para evitar problemas de conexión
             ydl_opts['source_address'] = '0.0.0.0'
+            # Agregar opciones adicionales para Twitter/X
+            ydl_opts['username'] = None  # Si tienes credenciales, agrégalas
+            ydl_opts['password'] = None
         
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:

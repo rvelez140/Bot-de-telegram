@@ -7,11 +7,14 @@ Bot de Telegram que descarga videos e imágenes de TikTok, YouTube, X (Twitter) 
 - 📥 Descarga videos de múltiples plataformas:
   - TikTok (sin marca de agua)
   - YouTube (hasta 1080p)
-  - X/Twitter
+  - X/Twitter (con soporte de cookies)
   - Instagram (posts y reels)
 - 🖼️ **NUEVO:** Descarga de imágenes en máxima calidad
 - 📦 **NUEVO:** División automática de videos grandes (>2GB) en partes iguales
 - 📎 **NUEVO:** Procesamiento múltiple de enlaces (envía varios a la vez)
+- 📝 **NUEVO:** Transcripción de audio a texto con Whisper AI
+- 🍪 **NUEVO:** Soporte de cookies para cuentas privadas y mejor acceso a Twitter/X
+- ⏱️ **NUEVO:** Botones interactivos (descarga, transcripción o ambos)
 - 🚫 Elimina marcas de agua automáticamente (TikTok)
 - 🐳 Completamente containerizado con Docker
 - 🔄 Procesamiento asíncrono
@@ -68,6 +71,24 @@ docker-compose up -d
 # Ver los logs
 docker-compose logs -f
 ```
+
+### 5. (Opcional) Configurar cookies para cuentas privadas y Twitter/X
+
+Si quieres descargar de cuentas privadas o resolver errores de Twitter/X como **"No video could be found in this tweet"**, necesitas configurar cookies:
+
+**Opción rápida:**
+1. Instala la extensión **"Get cookies.txt LOCALLY"** en tu navegador
+2. Inicia sesión en Twitter/X (o Instagram)
+3. Exporta las cookies usando la extensión
+4. Guarda el archivo como `cookies.txt` en el directorio del proyecto
+5. Reconstruye el Docker:
+   ```bash
+   docker-compose down
+   docker-compose build --no-cache
+   docker-compose up -d
+   ```
+
+**Guía detallada:** Ver [COOKIES_TWITTER.md](COOKIES_TWITTER.md)
 
 ## 📱 Uso
 
