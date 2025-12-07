@@ -28,6 +28,9 @@ RUN pip install --no-cache-dir --upgrade yt-dlp
 # Copiar el código del bot
 COPY bot.py .
 
+# Copiar cookies si existe (el workflow crea uno vacío si no existe)
+COPY cookies.txt /app/cookies.txt
+
 # Crear directorio para descargas
 RUN mkdir -p /downloads && chmod 777 /downloads
 

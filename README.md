@@ -1,6 +1,6 @@
-# 🎥 Bot de Telegram para Descargar Videos
+# 🎥 Bot de Telegram para Descargar Videos e Imágenes
 
-Bot de Telegram que descarga videos de TikTok, YouTube, X (Twitter) e Instagram, eliminando marcas de agua cuando es posible. Completamente auto-alojable usando Docker.
+Bot de Telegram que descarga videos e imágenes de TikTok, YouTube, X (Twitter) e Instagram, eliminando marcas de agua cuando es posible. Videos grandes (>2GB) se dividen automáticamente. Soporta múltiples enlaces simultáneos. Completamente auto-alojable usando Docker.
 
 ## ✨ Características
 
@@ -9,6 +9,9 @@ Bot de Telegram que descarga videos de TikTok, YouTube, X (Twitter) e Instagram,
   - YouTube (hasta 1080p)
   - X/Twitter
   - Instagram (posts y reels)
+- 🖼️ **NUEVO:** Descarga de imágenes en máxima calidad
+- 📦 **NUEVO:** División automática de videos grandes (>2GB) en partes iguales
+- 📎 **NUEVO:** Procesamiento múltiple de enlaces (envía varios a la vez)
 - 🚫 Elimina marcas de agua automáticamente (TikTok)
 - 🐳 Completamente containerizado con Docker
 - 🔄 Procesamiento asíncrono
@@ -74,29 +77,49 @@ docker-compose logs -f
 - `/help` - Ayuda y instrucciones
 - `/platforms` - Ver plataformas soportadas
 
-### Descargar un video
+### Descargar contenido
 
-1. Copia el enlace del video que quieres descargar
+**Un solo enlace:**
+1. Copia el enlace del video o imagen
 2. Envíaselo al bot directamente
 3. Espera mientras procesa
-4. Recibirás el video sin marca de agua (cuando sea posible)
+4. Recibirás el archivo sin marca de agua (cuando sea posible)
+
+**Múltiples enlaces (NUEVO):**
+Envía varios enlaces en un solo mensaje (uno por línea):
+```
+https://www.tiktok.com/@usuario/video/123
+https://www.youtube.com/watch?v=abc
+https://www.instagram.com/p/xyz/
+```
+
+El bot procesará todos los enlaces automáticamente.
+
+### Videos grandes (NUEVO)
+
+Videos que superan los 2GB se dividen automáticamente en partes:
+```
+✅ Video - Parte 1/3 (1.9GB)
+✅ Video - Parte 2/3 (1.9GB)  
+✅ Video - Parte 3/3 (0.2GB)
+```
 
 ### Ejemplos de enlaces soportados
 
 ```
-# TikTok
+# TikTok (videos e imágenes)
 https://www.tiktok.com/@usuario/video/1234567890
 https://vm.tiktok.com/ZMabcdefg/
 
-# YouTube
+# YouTube (hasta 1080p, división automática si >2GB)
 https://www.youtube.com/watch?v=dQw4w9WgXcQ
 https://youtu.be/dQw4w9WgXcQ
 
-# X (Twitter)
+# X (Twitter) - videos e imágenes
 https://twitter.com/usuario/status/1234567890
 https://x.com/usuario/status/1234567890
 
-# Instagram
+# Instagram (posts, reels e imágenes)
 https://www.instagram.com/reel/AbCdEfGhIjK/
 https://www.instagram.com/p/AbCdEfGhIjK/
 ```
@@ -195,9 +218,11 @@ docker-compose exec telegram-downloader-bot printenv TELEGRAM_BOT_TOKEN
 
 ## 📝 Limitaciones
 
-- Tamaño máximo de archivo: 50MB (limitación de Telegram)
+- Tamaño máximo de archivo: 2GB por parte (Telegram)
+- Videos >2GB se dividen automáticamente en partes de ~1.9GB
 - No se pueden descargar videos privados o con restricciones de copyright
 - La eliminación de marca de agua en TikTok depende de la disponibilidad de la versión sin marca
+- Procesamiento múltiple recomendado: hasta 10 enlaces por mensaje
 
 ## 🔒 Seguridad y Privacidad
 
