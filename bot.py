@@ -40,7 +40,7 @@ class VideoDownloader:
     async def download_video(self, url, chat_id):
         """Descarga el video usando yt-dlp"""
         output_path = os.path.join(DOWNLOAD_DIR, f'{chat_id}_%(title)s.%(ext)s')
-        
+
         ydl_opts = {
             'format': 'best[ext=mp4]/best',
             'outtmpl': output_path,
@@ -52,10 +52,17 @@ class VideoDownloader:
             'nocheckcertificate': True,
             # Limitar tamaño para Telegram (50MB)
             'max_filesize': 50 * 1024 * 1024,
+            # Headers para evitar bloqueos
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'en-us,en;q=0.5',
+                'Sec-Fetch-Mode': 'navigate',
+            },
         }
-        
+
         platform = self.get_platform(url)
-        
+
         # Configuraciones específicas por plataforma
         if platform == 'tiktok':
             # Intenta obtener versión sin marca de agua
@@ -65,6 +72,19 @@ class VideoDownloader:
         elif platform == 'youtube':
             # Para YouTube, obtener mejor calidad hasta 1080p
             ydl_opts['format'] = 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best'
+        elif platform == 'twitter':
+            # Configuración específica para Twitter/X
+            ydl_opts['format'] = 'best[ext=mp4]/best'
+            # Añadir extractor args específicos para Twitter
+            ydl_opts['extractor_args'] = {
+                'twitter': {
+                    'api': ['syndication', 'graphql']
+                }
+            }
+            # Intentar diferentes métodos de extracción
+            ydl_opts['cookiesfrombrowser'] = None  # No usar cookies del navegador por defecto
+            # Forzar IPv4 para evitar problemas de conexión
+            ydl_opts['source_address'] = '0.0.0.0'
         
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
