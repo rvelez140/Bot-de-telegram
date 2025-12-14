@@ -2,21 +2,35 @@
 
 Bot de Telegram que descarga videos e imágenes de TikTok, YouTube, X (Twitter) e Instagram, eliminando marcas de agua cuando es posible. Videos grandes (>2GB) se dividen automáticamente. Soporta múltiples enlaces simultáneos. Completamente auto-alojable usando Docker.
 
+**🌐 NUEVO:** Ahora incluye una aplicación web para gestionar cuentas y descargar videos desde el navegador. Ver [WEB_APP_README.md](WEB_APP_README.md) para más información.
+
 ## ✨ Características
 
+### Bot de Telegram
 - 📥 Descarga videos de múltiples plataformas:
   - TikTok (sin marca de agua)
   - YouTube (hasta 1080p)
   - X/Twitter
   - Instagram (posts y reels)
-- 🖼️ **NUEVO:** Descarga de imágenes en máxima calidad
-- 📦 **NUEVO:** División automática de videos grandes (>2GB) en partes iguales
-- 📎 **NUEVO:** Procesamiento múltiple de enlaces (envía varios a la vez)
+- 🖼️ Descarga de imágenes en máxima calidad
+- 📦 División automática de videos grandes (>2GB) en partes iguales
+- 📎 Procesamiento múltiple de enlaces (envía varios a la vez)
+- 🔐 Login para cuentas privadas de Twitter/X
+- 🎤 Transcripción de audio con Whisper AI
 - 🚫 Elimina marcas de agua automáticamente (TikTok)
 - 🐳 Completamente containerizado con Docker
 - 🔄 Procesamiento asíncrono
 - 📱 Interfaz simple de Telegram
 - 🔒 Auto-alojable y privado
+
+### 🌐 Aplicación Web (NUEVO)
+- 👤 Sistema de autenticación de usuarios
+- 🔐 Gestión de cuentas de redes sociales (Twitter/X)
+- 📥 Descarga de videos directamente desde el navegador
+- 📊 Historial de descargas
+- 🎨 Interfaz moderna y responsive
+- 🔒 Almacenamiento seguro de cookies
+- Ver documentación completa en [WEB_APP_README.md](WEB_APP_README.md)
 
 ## 📋 Requisitos Previos
 

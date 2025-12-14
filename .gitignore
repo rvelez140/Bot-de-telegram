@@ -10,6 +10,15 @@ downloads/
 *.webm
 *.mov
 
+# Aplicación Web
+data/
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+cookies*.txt
+web_users.db
+
 # Python
 __pycache__/
 *.py[cod]
