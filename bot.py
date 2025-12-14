@@ -127,7 +127,7 @@ async def generate_twitter_cookies(username, password):
 class VideoDownloader:
     def __init__(self):
         self.supported_platforms = {
-            'tiktok': ['tiktok.com', 'vm.tiktok.com'],
+            'tiktok': ['tiktok.com', 'vm.tiktok.com', 'vt.tiktok.com'],
             'youtube': ['youtube.com', 'youtu.be'],
             'twitter': ['twitter.com', 'x.com', 't.co'],
             'instagram': ['instagram.com']
@@ -280,6 +280,17 @@ class VideoDownloader:
             # Instagram necesita cookies para cuentas privadas
         elif platform == 'youtube':
             ydl_opts['format'] = 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best'
+            # Configuración adicional para evitar detección de bot en YouTube
+            ydl_opts['extractor_args'] = {
+                'youtube': {
+                    'player_client': ['android', 'web'],
+                    'skip': ['hls', 'dash']
+                }
+            }
+            # Intentar usar cookies si existe un archivo cookies.txt
+            cookies_file = '/app/cookies.txt'
+            if os.path.exists(cookies_file) and os.path.getsize(cookies_file) > 10:
+                ydl_opts['cookiefile'] = cookies_file
         elif platform == 'twitter':
             # Configuración específica para Twitter/X
             ydl_opts['format'] = 'best[ext=mp4]/best'

@@ -162,7 +162,7 @@ async def generate_twitter_cookies(username, password):
 def get_platform(url):
     """Detectar plataforma de la URL"""
     patterns = {
-        'tiktok': r'(tiktok\.com|vm\.tiktok\.com)',
+        'tiktok': r'(tiktok\.com|vm\.tiktok\.com|vt\.tiktok\.com)',
         'youtube': r'(youtube\.com|youtu\.be)',
         'twitter': r'(twitter\.com|x\.com)',
         'instagram': r'instagram\.com'
