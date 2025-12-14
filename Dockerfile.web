@@ -1,0 +1,41 @@
+# Dockerfile para la aplicación web Flask
+FROM python:3.11-slim
+
+# Establecer directorio de trabajo
+WORKDIR /app
+
+# Instalar dependencias del sistema
+RUN apt-get update && apt-get install -y \
+    ffmpeg \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copiar archivos de dependencias
+COPY requirements.txt .
+
+# Instalar dependencias de Python
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Instalar navegadores de Playwright
+RUN playwright install chromium
+RUN playwright install-deps chromium
+
+# Copiar aplicación web
+COPY web_app.py .
+COPY templates/ templates/
+COPY static/ static/
+
+# Crear directorios necesarios
+RUN mkdir -p /downloads /data
+
+# Exponer puerto
+EXPOSE 5000
+
+# Variables de entorno por defecto
+ENV FLASK_SECRET_KEY=change-this-in-production
+ENV WEB_PORT=5000
+ENV DOWNLOAD_DIR=/downloads
+ENV DATABASE_PATH=/data/web_users.db
+
+# Comando para ejecutar la aplicación
+CMD ["python", "web_app.py"]

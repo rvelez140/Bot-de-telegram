@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+
+{% block title %}Gestión de Cuentas - Video Downloader{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="page-header">
+        <h1>🔐 Gestión de Cuentas</h1>
+        <p>Configura tus cuentas de redes sociales para descargar contenido privado</p>
+    </div>
+
+    <!-- Agregar nueva cuenta -->
+    <div class="card">
+        <h2>➕ Agregar Cuenta</h2>
+
+        <form id="addAccountForm">
+            <div class="form-group">
+                <label for="platform">Plataforma</label>
+                <select id="platform" name="platform" required>
+                    <option value="">Selecciona una plataforma</option>
+                    <option value="twitter">🐦 Twitter/X</option>
+                    <!-- Futuras plataformas -->
+                    <!-- <option value="instagram">📷 Instagram</option> -->
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="platform_username">Usuario o Email</label>
+                <input type="text" id="platform_username" name="platform_username" placeholder="tu_usuario o email@ejemplo.com" required>
+            </div>
+
+            <div class="form-group">
+                <label for="platform_password">Contraseña</label>
+                <input type="password" id="platform_password" name="platform_password" required>
+                <small class="text-warning">⚠️ Tu contraseña no se guarda. Solo se usan cookies de sesión.</small>
+            </div>
+
+            <button type="submit" class="btn btn-primary" id="addAccountBtn">
+                Agregar Cuenta
+            </button>
+        </form>
+
+        <div id="addAccountStatus" class="download-status" style="display: none;"></div>
+    </div>
+
+    <!-- Cuentas configuradas -->
+    <div class="card">
+        <h2>📋 Cuentas Configuradas</h2>
+
+        {% if accounts %}
+        <div class="accounts-grid">
+            {% for account in accounts %}
+            <div class="account-card">
+                <div class="account-card-header">
+                    <span class="account-platform-icon">
+                        {% if account.platform == 'twitter' %}🐦{% endif %}
+                    </span>
+                    <h3>
+                        {% if account.platform == 'twitter' %}Twitter/X{% endif %}
+                    </h3>
+                </div>
+                <div class="account-card-body">
+                    <p><strong>Usuario:</strong> @{{ account.platform_username }}</p>
+                    <p><small>Agregada: {{ account.created_at }}</small></p>
+                    <p><small>Actualizada: {{ account.updated_at }}</small></p>
+                </div>
+                <div class="account-card-footer">
+                    <button class="btn btn-danger btn-sm" onclick="deleteAccount('{{ account.platform }}')">
+                        Eliminar
+                    </button>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <p>🔓 No tienes cuentas configuradas</p>
+            <p>Agrega una cuenta arriba para poder descargar contenido privado de redes sociales.</p>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Información de seguridad -->
+    <div class="card card-info">
+        <h3>🔒 Información de Seguridad</h3>
+        <ul>
+            <li>✅ <strong>No guardamos contraseñas:</strong> Solo se usan para generar cookies de sesión</li>
+            <li>✅ <strong>Cookies seguras:</strong> Las cookies se almacenan cifradas en la base de datos</li>
+            <li>✅ <strong>Sesiones privadas:</strong> Solo tú tienes acceso a tus cuentas configuradas</li>
+            <li>✅ <strong>Puedes eliminar en cualquier momento:</strong> Tus datos se borran completamente</li>
+        </ul>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Agregar cuenta
+document.getElementById('addAccountForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+
+    const btn = document.getElementById('addAccountBtn');
+    const status = document.getElementById('addAccountStatus');
+    const formData = new FormData(this);
+
+    btn.disabled = true;
+    btn.textContent = 'Procesando...';
+    status.style.display = 'block';
+    status.className = 'download-status status-loading';
+    status.innerHTML = '⏳ Iniciando sesión en la plataforma...';
+
+    try {
+        const response = await fetch('{{ url_for("add_account") }}', {
+            method: 'POST',
+            body: formData
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            status.className = 'download-status status-success';
+            status.innerHTML = '✅ ' + data.message;
+
+            // Limpiar formulario
+            document.getElementById('addAccountForm').reset();
+
+            // Recargar página después de 2 segundos
+            setTimeout(() => {
+                window.location.reload();
+            }, 2000);
+
+        } else {
+            status.className = 'download-status status-error';
+            status.innerHTML = '❌ ' + data.error;
+        }
+
+    } catch (error) {
+        status.className = 'download-status status-error';
+        status.innerHTML = '❌ Error: ' + error.message;
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Agregar Cuenta';
+    }
+});
+
+// Eliminar cuenta
+async function deleteAccount(platform) {
+    if (!confirm('¿Estás seguro de que deseas eliminar esta cuenta?')) {
+        return;
+    }
+
+    try {
+        const formData = new FormData();
+        formData.append('platform', platform);
+
+        const response = await fetch('{{ url_for("delete_account") }}', {
+            method: 'POST',
+            body: formData
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            alert('✅ Cuenta eliminada exitosamente');
+            window.location.reload();
+        } else {
+            alert('❌ Error: ' + data.error);
+        }
+
+    } catch (error) {
+        alert('❌ Error: ' + error.message);
+    }
+}
+</script>
+{% endblock %}

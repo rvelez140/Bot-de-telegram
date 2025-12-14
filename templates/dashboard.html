@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Video Downloader{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="page-header">
+        <h1>Dashboard</h1>
+        <p>Bienvenido, <strong>{{ username }}</strong></p>
+    </div>
+
+    <!-- Sección de descarga -->
+    <div class="card">
+        <h2>📥 Descargar Video</h2>
+        <p>Pega la URL del video que deseas descargar</p>
+
+        <form id="downloadForm" class="download-form">
+            <div class="form-group">
+                <input type="url" id="videoUrl" name="url" placeholder="https://tiktok.com/..." required>
+                <button type="submit" class="btn btn-primary" id="downloadBtn">
+                    Descargar
+                </button>
+            </div>
+        </form>
+
+        <div id="downloadStatus" class="download-status" style="display: none;"></div>
+
+        <div class="platform-badges">
+            <span class="badge">TikTok</span>
+            <span class="badge">YouTube</span>
+            <span class="badge">Twitter/X</span>
+            <span class="badge">Instagram</span>
+        </div>
+    </div>
+
+    <!-- Cuentas configuradas -->
+    <div class="card">
+        <h2>🔐 Cuentas Configuradas</h2>
+
+        {% if accounts %}
+        <div class="accounts-list">
+            {% for account in accounts %}
+            <div class="account-item">
+                <div class="account-info">
+                    <span class="account-platform">
+                        {% if account.platform == 'twitter' %}🐦 Twitter/X{% endif %}
+                    </span>
+                    <span class="account-username">@{{ account.platform_username }}</span>
+                </div>
+                <div class="account-meta">
+                    <small>Agregada: {{ account.created_at }}</small>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-muted">No tienes cuentas configuradas. <a href="{{ url_for('accounts') }}">Agrega una cuenta</a> para descargar contenido privado.</p>
+        {% endif %}
+    </div>
+
+    <!-- Historial de descargas -->
+    <div class="card">
+        <h2>📜 Historial Reciente</h2>
+
+        {% if history %}
+        <div class="history-list">
+            {% for item in history %}
+            <div class="history-item">
+                <div class="history-icon">
+                    {% if item.platform == 'tiktok' %}🎵{% elif item.platform == 'youtube' %}▶️{% elif item.platform == 'twitter' %}🐦{% elif item.platform == 'instagram' %}📷{% endif %}
+                </div>
+                <div class="history-info">
+                    <div class="history-url">{{ item.url[:50] }}{% if item.url|length > 50 %}...{% endif %}</div>
+                    <div class="history-meta">
+                        <span>{{ item.platform }}</span>
+                        <span>{{ item.downloaded_at }}</span>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-muted">No tienes descargas recientes.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.getElementById('downloadForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+
+    const btn = document.getElementById('downloadBtn');
+    const status = document.getElementById('downloadStatus');
+    const url = document.getElementById('videoUrl').value;
+
+    // Mostrar estado de descarga
+    btn.disabled = true;
+    btn.textContent = 'Descargando...';
+    status.style.display = 'block';
+    status.className = 'download-status status-loading';
+    status.innerHTML = '⏳ Procesando descarga...';
+
+    try {
+        const formData = new FormData();
+        formData.append('url', url);
+
+        const response = await fetch('{{ url_for("download") }}', {
+            method: 'POST',
+            body: formData
+        });
+
+        if (response.ok) {
+            // Descargar archivo
+            const blob = await response.blob();
+            const downloadUrl = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = downloadUrl;
+
+            // Obtener nombre del archivo desde los headers
+            const contentDisposition = response.headers.get('content-disposition');
+            let filename = 'video';
+            if (contentDisposition) {
+                const filenameMatch = contentDisposition.match(/filename="?(.+)"?/);
+                if (filenameMatch) {
+                    filename = filenameMatch[1];
+                }
+            }
+
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(downloadUrl);
+            document.body.removeChild(a);
+
+            status.className = 'download-status status-success';
+            status.innerHTML = '✅ Descarga completada exitosamente';
+
+            // Limpiar formulario
+            document.getElementById('videoUrl').value = '';
+
+            // Recargar página después de 2 segundos para actualizar historial
+            setTimeout(() => {
+                window.location.reload();
+            }, 2000);
+
+        } else {
+            const error = await response.json();
+            status.className = 'download-status status-error';
+            status.innerHTML = '❌ Error: ' + (error.error || 'Error desconocido');
+        }
+
+    } catch (error) {
+        status.className = 'download-status status-error';
+        status.innerHTML = '❌ Error: ' + error.message;
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Descargar';
+    }
+});
+</script>
+{% endblock %}
