@@ -16,23 +16,55 @@
         <form id="addAccountForm">
             <div class="form-group">
                 <label for="platform">Plataforma</label>
-                <select id="platform" name="platform" required>
+                <select id="platform" name="platform" required onchange="handlePlatformChange()">
                     <option value="">Selecciona una plataforma</option>
                     <option value="twitter">🐦 Twitter/X</option>
-                    <!-- Futuras plataformas -->
-                    <!-- <option value="instagram">📷 Instagram</option> -->
+                    <option value="instagram">📷 Instagram</option>
+                    <option value="tiktok">🎵 TikTok</option>
+                    <option value="other">🌐 Otra / Personalizada</option>
                 </select>
             </div>
 
-            <div class="form-group">
-                <label for="platform_username">Usuario o Email</label>
-                <input type="text" id="platform_username" name="platform_username" placeholder="tu_usuario o email@ejemplo.com" required>
+            <div class="form-group" id="custom_platform_group" style="display:none;">
+                <label for="custom_platform">Nombre de Plataforma</label>
+                <input type="text" id="custom_platform" name="custom_platform" placeholder="ej. facebook">
             </div>
 
-            <div class="form-group">
-                <label for="platform_password">Contraseña</label>
-                <input type="password" id="platform_password" name="platform_password" required>
-                <small class="text-warning">⚠️ Tu contraseña no se guarda. Solo se usan cookies de sesión.</small>
+            <div class="form-group" style="margin-bottom: 15px;">
+                <label style="display: block; margin-bottom: 5px;">Método de Autenticación</label>
+                <div style="display: flex; gap: 15px;">
+                    <label style="font-weight: normal;">
+                        <input type="radio" name="auth_method" value="auto" checked onchange="toggleAuthFields()"> Automático (Solo Twitter)
+                    </label>
+                    <label style="font-weight: normal;">
+                        <input type="radio" name="auth_method" value="cookies" onchange="toggleAuthFields()"> Cookies (Manual)
+                    </label>
+                </div>
+            </div>
+
+            <div id="auth_auto_fields">
+                <div class="form-group">
+                    <label for="platform_username">Usuario o Email</label>
+                    <input type="text" id="platform_username" name="platform_username" placeholder="tu_usuario o email@ejemplo.com">
+                </div>
+
+                <div class="form-group">
+                    <label for="platform_password">Contraseña</label>
+                    <input type="password" id="platform_password" name="platform_password">
+                    <small class="text-warning">⚠️ Tu contraseña no se guarda. Solo se usan cookies de sesión.</small>
+                </div>
+            </div>
+
+            <div id="auth_cookie_fields" style="display:none;">
+                 <div class="form-group">
+                    <label for="platform_username_manual">Nombre de Usuario (Referencia)</label>
+                    <input type="text" id="platform_username_manual" name="platform_username_manual" placeholder="tu_usuario">
+                </div>
+                <div class="form-group">
+                    <label for="cookies">Cookies (Formato Netscape)</label>
+                    <textarea id="cookies" name="cookies" rows="5" class="form-control" style="width: 100%; padding: 8px;" placeholder="# Netscape HTTP Cookie File..."></textarea>
+                    <small class="text-info">ℹ️ Usa una extensión como "Get cookies.txt" para obtenerlas.</small>
+                </div>
             </div>
 
             <button type="submit" class="btn btn-primary" id="addAccountBtn">
@@ -53,10 +85,13 @@
             <div class="account-card">
                 <div class="account-card-header">
                     <span class="account-platform-icon">
-                        {% if account.platform == 'twitter' %}🐦{% endif %}
+                        {% if account.platform == 'twitter' %}🐦
+                        {% elif account.platform == 'instagram' %}📷
+                        {% elif account.platform == 'tiktok' %}🎵
+                        {% else %}🌐{% endif %}
                     </span>
                     <h3>
-                        {% if account.platform == 'twitter' %}Twitter/X{% endif %}
+                        {% if account.platform == 'twitter' %}Twitter/X{% else %}{{ account.platform|title }}{% endif %}
                     </h3>
                 </div>
                 <div class="account-card-body">
@@ -95,6 +130,52 @@
 
 {% block extra_js %}
 <script>
+function handlePlatformChange() {
+    const platform = document.getElementById('platform').value;
+    const customGroup = document.getElementById('custom_platform_group');
+    const autoRadio = document.querySelector('input[name="auth_method"][value="auto"]');
+    const cookiesRadio = document.querySelector('input[name="auth_method"][value="cookies"]');
+
+    // Mostrar campo personalizado si es necesario
+    customGroup.style.display = platform === 'other' ? 'block' : 'none';
+
+    // Si no es Twitter, forzar método de cookies y deshabilitar automático
+    if (platform !== 'twitter' && platform !== '') {
+        autoRadio.disabled = true;
+        cookiesRadio.checked = true;
+    } else {
+        autoRadio.disabled = false;
+        // Si es Twitter, por defecto automático
+        if (platform === 'twitter') {
+            autoRadio.checked = true;
+        }
+    }
+
+    toggleAuthFields();
+}
+
+function toggleAuthFields() {
+    const authMethod = document.querySelector('input[name="auth_method"]:checked').value;
+    const autoFields = document.getElementById('auth_auto_fields');
+    const cookieFields = document.getElementById('auth_cookie_fields');
+
+    if (authMethod === 'auto') {
+        autoFields.style.display = 'block';
+        cookieFields.style.display = 'none';
+        document.getElementById('platform_username').required = true;
+        document.getElementById('platform_password').required = true;
+        document.getElementById('platform_username_manual').required = false;
+        document.getElementById('cookies').required = false;
+    } else {
+        autoFields.style.display = 'none';
+        cookieFields.style.display = 'block';
+        document.getElementById('platform_username').required = false;
+        document.getElementById('platform_password').required = false;
+        document.getElementById('platform_username_manual').required = true;
+        document.getElementById('cookies').required = true;
+    }
+}
+
 // Agregar cuenta
 document.getElementById('addAccountForm').addEventListener('submit', async function(e) {
     e.preventDefault();

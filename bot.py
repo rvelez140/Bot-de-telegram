@@ -1,6 +1,9 @@
 import os
 import logging
 import asyncio
+import sqlite3
+import uuid
+import math
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes, ConversationHandler
 import yt_dlp
@@ -36,6 +39,42 @@ user_data_store = {}
 
 # Almacenar cookies de X/Twitter por usuario
 user_twitter_cookies = {}
+
+DATABASE_PATH = os.getenv('DATABASE_PATH', '/data/web_users.db')
+
+def get_cookies_from_db(url):
+    """Obtiene cookies de la base de datos para la URL dada"""
+    if not os.path.exists(DATABASE_PATH):
+        return None
+
+    try:
+        conn = sqlite3.connect(DATABASE_PATH)
+        cursor = conn.cursor()
+
+        # Consultar todas las cuentas
+        cursor.execute('SELECT platform, cookies FROM social_accounts')
+        accounts = cursor.fetchall()
+
+        url_lower = url.lower()
+
+        for platform, cookies in accounts:
+            # Limpiar nombre de plataforma para buscar en URL (ej. "twitter" en "twitter.com")
+            clean_platform = platform.lower().strip()
+
+            # Mapeos especiales
+            if clean_platform == 'x' and ('twitter.com' in url_lower or 'x.com' in url_lower):
+                conn.close()
+                return cookies
+
+            if clean_platform in url_lower:
+                conn.close()
+                return cookies
+
+        conn.close()
+        return None
+    except Exception as e:
+        logger.error(f"Error leyendo DB de cookies: {e}")
+        return None
 
 # Estados para el ConversationHandler de login
 WAITING_USERNAME, WAITING_PASSWORD = range(2)
@@ -270,6 +309,17 @@ class VideoDownloader:
 
         platform = self.get_platform(url)
 
+        # Intentar obtener cookies de la DB (sobrescribe configuraciones anteriores si es necesario)
+        db_cookies = get_cookies_from_db(url)
+        temp_cookie_file = None
+
+        if db_cookies:
+            logger.info(f"Usando cookies de la base de datos para {url}")
+            temp_cookie_file = os.path.join(DOWNLOAD_DIR, f'cookies_db_{uuid.uuid4()}.txt')
+            with open(temp_cookie_file, 'w') as f:
+                f.write(db_cookies)
+            ydl_opts['cookiefile'] = temp_cookie_file
+
         # Configuraciones específicas por plataforma
         if platform == 'tiktok':
             ydl_opts['format'] = 'best[ext=mp4]/best'
@@ -287,10 +337,11 @@ class VideoDownloader:
                     'skip': ['hls', 'dash']
                 }
             }
-            # Intentar usar cookies si existe un archivo cookies.txt
-            cookies_file = '/app/cookies.txt'
-            if os.path.exists(cookies_file) and os.path.getsize(cookies_file) > 10:
-                ydl_opts['cookiefile'] = cookies_file
+            # Intentar usar cookies globales si existe un archivo cookies.txt y no se cargaron de DB
+            if 'cookiefile' not in ydl_opts:
+                cookies_file = '/app/cookies.txt'
+                if os.path.exists(cookies_file) and os.path.getsize(cookies_file) > 10:
+                    ydl_opts['cookiefile'] = cookies_file
         elif platform == 'twitter':
             # Configuración específica para Twitter/X
             ydl_opts['format'] = 'best[ext=mp4]/best'
@@ -301,7 +352,7 @@ class VideoDownloader:
                 }
             }
 
-            # Usar cookies del usuario si están disponibles
+            # Usar cookies del usuario de Telegram si están disponibles (tienen prioridad sobre DB)
             if user_id and user_id in user_twitter_cookies:
                 # Crear archivo temporal de cookies para este usuario
                 cookies_file = os.path.join(DOWNLOAD_DIR, f'cookies_{user_id}.txt')
@@ -309,8 +360,8 @@ class VideoDownloader:
                     f.write(user_twitter_cookies[user_id])
                 ydl_opts['cookiefile'] = cookies_file
                 logger.info(f"Usando cookies de usuario {user_id} para Twitter")
-            else:
-                # No usar cookies del navegador por defecto
+            elif 'cookiefile' not in ydl_opts:
+                # No usar cookies del navegador por defecto si no hay cookies
                 ydl_opts['cookiesfrombrowser'] = None
 
             # Forzar IPv4 para evitar problemas de conexión
@@ -345,7 +396,7 @@ class VideoDownloader:
                     'filename': filename,
                     'parts': parts,
                     'title': info.get('title', 'video'),
-                    'platform': platform,
+                    'platform': platform if platform else 'generic',
                     'file_size': file_size,
                     'type': 'video'
                 }
@@ -355,6 +406,13 @@ class VideoDownloader:
                 'success': False,
                 'error': str(e)
             }
+        finally:
+            # Limpiar archivo de cookies temporal de DB
+            if temp_cookie_file and os.path.exists(temp_cookie_file):
+                try:
+                    os.remove(temp_cookie_file)
+                except:
+                    pass
 
     async def extract_audio(self, video_path):
         """Extrae el audio de un video"""
@@ -661,57 +719,65 @@ async def handle_login_callback(update: Update, context: ContextTypes.DEFAULT_TY
 
 async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Maneja URLs enviados por el usuario"""
-    url = update.message.text.strip()
+    text = update.message.text.strip()
 
     # Validar que sea un URL
     url_pattern = re.compile(
         r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+'
     )
 
-    if not url_pattern.match(url):
+    urls = url_pattern.findall(text)
+
+    if not urls:
         await update.message.reply_text(
             "❌ No se encontraron enlaces válidos.\n"
             "Envía uno o más enlaces de video/imagen."
         )
         return
 
-    # Detectar plataforma
-    platform = downloader.get_platform(url)
-    if not platform:
-        await update.message.reply_text(
-            "❌ Ninguno de los enlaces es de una plataforma soportada.\n"
-            "Usa /platforms para ver las plataformas disponibles."
-        )
-        return
+    # Procesar cada URL encontrada
+    for url in urls:
+        # Detectar plataforma
+        platform = downloader.get_platform(url)
 
-    # Guardar URL en el almacén temporal (expira en 30 segundos)
-    user_id = update.effective_user.id
-    expiration_time = datetime.now() + timedelta(seconds=30)
-    user_data_store[user_id] = {
-        'url': url,
-        'platform': platform,
-        'expires_at': expiration_time
-    }
+        # Si no es plataforma conocida, marcamos como generica
+        if not platform:
+            platform = 'generic'
 
-    # Crear botones inline
-    keyboard = [
-        [
-            InlineKeyboardButton("📥 Solo Descargar", callback_data=f"download_{user_id}"),
-            InlineKeyboardButton("📝 Solo Transcribir", callback_data=f"transcribe_{user_id}")
-        ],
-        [
-            InlineKeyboardButton("📥+📝 Descargar y Transcribir", callback_data=f"both_{user_id}")
+        # Generar ID único para esta solicitud
+        request_id = str(uuid.uuid4())
+
+        # Guardar URL en el almacén temporal (expira en 2 minutos)
+        user_id = update.effective_user.id
+        expiration_time = datetime.now() + timedelta(minutes=2)
+        user_data_store[request_id] = {
+            'url': url,
+            'platform': platform,
+            'user_id': user_id,
+            'expires_at': expiration_time
+        }
+
+        # Crear botones inline
+        keyboard = [
+            [
+                InlineKeyboardButton("📥 Solo Descargar", callback_data=f"download_{request_id}"),
+                InlineKeyboardButton("📝 Solo Transcribir", callback_data=f"transcribe_{request_id}")
+            ],
+            [
+                InlineKeyboardButton("📥+📝 Descargar y Transcribir", callback_data=f"both_{request_id}")
+            ]
         ]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
+        reply_markup = InlineKeyboardMarkup(keyboard)
 
-    await update.message.reply_text(
-        f"🎬 Video detectado de *{platform.upper()}*\n\n"
-        "¿Qué deseas hacer con este video?\n"
-        "⏱️ _Tienes 30 segundos para elegir_",
-        reply_markup=reply_markup,
-        parse_mode='Markdown'
-    )
+        platform_display = platform.upper() if platform != 'generic' else 'VIDEO'
+
+        await update.message.reply_text(
+            f"🎬 Enlace detectado: {url}\n"
+            f"🌐 Plataforma: *{platform_display}*\n\n"
+            "¿Qué deseas hacer?",
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Maneja los callbacks de los botones inline"""
@@ -719,29 +785,28 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
     # Parsear el callback data
-    action, user_id_str = query.data.split('_', 1)
-    user_id = int(user_id_str)
-
-    # Verificar que el usuario que presionó el botón es el correcto
-    if query.from_user.id != user_id:
-        await query.answer("⚠️ Este botón no es para ti", show_alert=True)
-        return
+    action, request_id = query.data.split('_', 1)
 
     # Verificar si los datos aún están disponibles
-    if user_id not in user_data_store:
+    if request_id not in user_data_store:
         await query.edit_message_text(
-            "❌ El tiempo para seleccionar ha expirado (30 segundos).\n"
+            "❌ La solicitud ha expirado o ya fue procesada.\n"
             "Por favor, envía el enlace nuevamente."
         )
         return
 
-    user_data = user_data_store[user_id]
+    user_data = user_data_store[request_id]
+
+    # Verificar que el usuario que presionó el botón es el correcto
+    if query.from_user.id != user_data['user_id']:
+        await query.answer("⚠️ Este botón no es para ti", show_alert=True)
+        return
 
     # Verificar expiración
     if datetime.now() > user_data['expires_at']:
-        del user_data_store[user_id]
+        del user_data_store[request_id]
         await query.edit_message_text(
-            "❌ El tiempo para seleccionar ha expirado (30 segundos).\n"
+            "❌ El tiempo para seleccionar ha expirado.\n"
             "Por favor, envía el enlace nuevamente."
         )
         return
@@ -751,7 +816,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = query.message.chat_id
 
     # Limpiar datos del almacén
-    del user_data_store[user_id]
+    del user_data_store[request_id]
 
     # Procesar según la acción seleccionada
     if action == 'download':
@@ -786,7 +851,11 @@ async def process_download_only(query, url, platform, chat_id):
         await query.edit_message_text("📤 Enviando video...")
 
         with open(result['filename'], 'rb') as video_file:
-            caption = f"✅ *{result['title']}*\n\n🌐 Plataforma: {result['platform'].upper()}"
+            # Escapar caracteres para Markdown
+            safe_title = str(result['title']).replace('_', '\\_').replace('*', '\\*').replace('`', '\\`').replace('[', '\\[')
+            safe_url = url.replace('_', '\\_').replace('*', '\\*').replace('`', '\\`').replace('[', '\\[')
+
+            caption = f"✅ *{safe_title}*\n\n🌐 Plataforma: {result['platform'].upper()}\n🔗 Fuente: {safe_url}"
             if result['platform'] == 'tiktok':
                 caption += "\n🚫 Sin marca de agua"
 
@@ -946,7 +1015,11 @@ async def process_both(query, url, platform, chat_id):
         await query.edit_message_text("📤 Enviando video...")
 
         with open(result['filename'], 'rb') as video_file:
-            caption = f"✅ *{result['title']}*\n\n🌐 Plataforma: {result['platform'].upper()}"
+            # Escapar caracteres para Markdown
+            safe_title = str(result['title']).replace('_', '\\_').replace('*', '\\*').replace('`', '\\`').replace('[', '\\[')
+            safe_url = url.replace('_', '\\_').replace('*', '\\*').replace('`', '\\`').replace('[', '\\[')
+
+            caption = f"✅ *{safe_title}*\n\n🌐 Plataforma: {result['platform'].upper()}\n🔗 Fuente: {safe_url}"
             if result['platform'] == 'tiktok':
                 caption += "\n🚫 Sin marca de agua"
 
@@ -1073,7 +1146,7 @@ def main():
     application.add_handler(CommandHandler("platforms", platforms))
     application.add_handler(CommandHandler("logout_twitter", logout_twitter))
     application.add_handler(login_conversation)
-    application.add_handler(CallbackQueryHandler(button_callback, pattern=r'^(download|transcribe|both)_\d+$'))
+    application.add_handler(CallbackQueryHandler(button_callback, pattern=r'^(download|transcribe|both)_.+$'))
     application.add_handler(CallbackQueryHandler(handle_login_callback, pattern=r'^(replace|cancel)_login_\d+$'))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_url))
     application.add_error_handler(error_handler)

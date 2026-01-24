@@ -342,17 +342,54 @@ def add_account():
     """Agregar cuenta de red social"""
     user_id = session['user_id']
     platform = request.form.get('platform', '').lower()
-    platform_username = request.form.get('platform_username', '').strip()
-    platform_password = request.form.get('platform_password', '')
+    auth_method = request.form.get('auth_method', 'auto')
 
-    if not platform or not platform_username or not platform_password:
-        return jsonify({'success': False, 'error': 'Todos los campos son requeridos'})
+    # Manejar plataforma personalizada
+    if platform == 'other':
+        platform = request.form.get('custom_platform', '').strip().lower()
 
-    if platform not in ['twitter']:
-        return jsonify({'success': False, 'error': 'Plataforma no soportada'})
+    if not platform:
+        return jsonify({'success': False, 'error': 'Plataforma es requerida'})
 
-    # Generar cookies según la plataforma
-    if platform == 'twitter':
+    # Método manual (Cookies)
+    if auth_method == 'cookies':
+        platform_username = request.form.get('platform_username_manual', '').strip()
+        cookies_str = request.form.get('cookies', '').strip()
+
+        if not platform_username or not cookies_str:
+            return jsonify({'success': False, 'error': 'Usuario y cookies son requeridos'})
+
+        # Validación básica de cookies
+        if "# Netscape HTTP Cookie File" not in cookies_str and len(cookies_str) < 20:
+            return jsonify({'success': False, 'error': 'Formato de cookies inválido'})
+
+        try:
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT OR REPLACE INTO social_accounts
+                (user_id, platform, platform_username, cookies, updated_at)
+                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ''', (user_id, platform, platform_username, cookies_str))
+            conn.commit()
+            conn.close()
+
+            return jsonify({'success': True, 'message': f'Cuenta de {platform} agregada exitosamente'})
+        except Exception as e:
+            return jsonify({'success': False, 'error': f'Error al guardar: {str(e)}'})
+
+    # Método automático (Solo Twitter)
+    else:
+        platform_username = request.form.get('platform_username', '').strip()
+        platform_password = request.form.get('platform_password', '')
+
+        if not platform_username or not platform_password:
+            return jsonify({'success': False, 'error': 'Usuario y contraseña son requeridos'})
+
+        if platform != 'twitter':
+            return jsonify({'success': False, 'error': 'Autenticación automática solo disponible para Twitter'})
+
+        # Generar cookies
         success, cookies_str, error_msg = asyncio.run(
             generate_twitter_cookies(platform_username, platform_password)
         )
@@ -372,12 +409,10 @@ def add_account():
             conn.commit()
             conn.close()
 
-            return jsonify({'success': True, 'message': 'Cuenta agregada exitosamente'})
+            return jsonify({'success': True, 'message': 'Cuenta de Twitter agregada exitosamente'})
 
         except Exception as e:
             return jsonify({'success': False, 'error': f'Error al guardar: {str(e)}'})
-
-    return jsonify({'success': False, 'error': 'Plataforma no implementada'})
 
 @app.route('/delete-account', methods=['POST'])
 @login_required
