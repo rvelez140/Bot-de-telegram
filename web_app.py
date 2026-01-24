@@ -9,6 +9,8 @@ from functools import wraps
 import sqlite3
 import hashlib
 import secrets
+import psutil
+import humanize
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for, send_file
 from werkzeug.security import generate_password_hash, check_password_hash
 import yt_dlp
@@ -66,6 +68,32 @@ def init_db():
             platform TEXT NOT NULL,
             filename TEXT,
             downloaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES web_users (id)
+        )
+    ''')
+
+    # Tabla de suscripciones
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS subscriptions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            url TEXT NOT NULL,
+            platform TEXT NOT NULL,
+            last_checked TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES web_users (id),
+            UNIQUE(user_id, url)
+        )
+    ''')
+
+    # Tabla de configuración de rclone
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS rclone_config (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            config_name TEXT NOT NULL,
+            config_content TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES web_users (id)
         )
     ''')
@@ -311,12 +339,21 @@ def dashboard():
         (user_id,)
     ).fetchall()
 
+    # Datos del sistema
+    system_info = {
+        'cpu_percent': psutil.cpu_percent(),
+        'memory_percent': psutil.virtual_memory().percent,
+        'disk_usage': psutil.disk_usage('/').percent,
+        'disk_free': humanize.naturalsize(psutil.disk_usage('/').free),
+    }
+
     conn.close()
 
     return render_template('dashboard.html',
                           username=session['username'],
                           accounts=accounts,
-                          history=history)
+                          history=history,
+                          system_info=system_info)
 
 @app.route('/accounts')
 @login_required

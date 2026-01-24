@@ -6,6 +6,9 @@ RUN apt-get update && \
     ffmpeg \
     wget \
     curl \
+    aria2 \
+    procps \
+    rclone \
     ca-certificates \
     git \
     build-essential \

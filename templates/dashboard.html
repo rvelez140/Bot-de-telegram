@@ -9,6 +9,38 @@
         <p>Bienvenido, <strong>{{ username }}</strong></p>
     </div>
 
+    <!-- Monitor del Sistema -->
+    <div class="card" style="margin-bottom: 20px;">
+        <h2>🖥️ Estado del Servidor</h2>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin-top: 15px;">
+            <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; text-align: center;">
+                <h3 style="margin: 0 0 10px; font-size: 1.1em; color: #666;">CPU</h3>
+                <p style="font-size: 1.5em; font-weight: bold; margin: 0; color: #007bff;">{{ system_info.cpu_percent }}%</p>
+                <div style="background: #e9ecef; height: 5px; border-radius: 5px; margin-top: 10px; overflow: hidden;">
+                    <div style="width: {{ system_info.cpu_percent }}%; background: #007bff; height: 100%;"></div>
+                </div>
+            </div>
+            <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; text-align: center;">
+                <h3 style="margin: 0 0 10px; font-size: 1.1em; color: #666;">RAM</h3>
+                <p style="font-size: 1.5em; font-weight: bold; margin: 0; color: #28a745;">{{ system_info.memory_percent }}%</p>
+                <div style="background: #e9ecef; height: 5px; border-radius: 5px; margin-top: 10px; overflow: hidden;">
+                    <div style="width: {{ system_info.memory_percent }}%; background: #28a745; height: 100%;"></div>
+                </div>
+            </div>
+             <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; text-align: center;">
+                <h3 style="margin: 0 0 10px; font-size: 1.1em; color: #666;">Disco</h3>
+                <p style="font-size: 1.5em; font-weight: bold; margin: 0; color: #ffc107;">{{ system_info.disk_usage }}%</p>
+                <div style="background: #e9ecef; height: 5px; border-radius: 5px; margin-top: 10px; overflow: hidden;">
+                    <div style="width: {{ system_info.disk_usage }}%; background: #ffc107; height: 100%;"></div>
+                </div>
+            </div>
+             <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; text-align: center;">
+                <h3 style="margin: 0 0 10px; font-size: 1.1em; color: #666;">Libre</h3>
+                <p style="font-size: 1.5em; font-weight: bold; margin: 0; color: #6c757d;">{{ system_info.disk_free }}</p>
+            </div>
+        </div>
+    </div>
+
     <!-- Sección de descarga -->
     <div class="card">
         <h2>📥 Descargar Video</h2>

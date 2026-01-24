@@ -4,6 +4,7 @@ import asyncio
 import sqlite3
 import uuid
 import math
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes, ConversationHandler
 import yt_dlp
@@ -26,6 +27,7 @@ logger = logging.getLogger(__name__)
 BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 DOWNLOAD_DIR = '/downloads'
 WHISPER_MODEL = None  # Se carga bajo demanda
+scheduler = AsyncIOScheduler()
 
 # Límites de Telegram
 MAX_FILE_SIZE = 2000 * 1024 * 1024  # 2GB en bytes
@@ -238,7 +240,61 @@ class VideoDownloader:
             return float(result.stdout.strip())
         except:
             return 3600  # Default 1 hora si no se puede obtener
-    
+
+    async def download_playlist(self, url, chat_id, user_id=None):
+        """Descarga una playlist completa"""
+        output_tmpl = os.path.join(DOWNLOAD_DIR, f'{chat_id}_%(playlist_index)s_%(title)s.%(ext)s')
+
+        ydl_opts = {
+            'format': 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+            'outtmpl': output_tmpl,
+            'quiet': False,
+            'no_warnings': True,
+            'ignoreerrors': True, # Continuar si un video falla
+            'nocheckcertificate': True,
+            'max_filesize': 50 * 1024 * 1024,
+            # Limitar a 10 videos por seguridad
+            'playlistend': 10,
+        }
+
+        # Cookies logic (simplificado, reusar de download_video)
+        db_cookies = get_cookies_from_db(url)
+        temp_cookie_file = None
+        if db_cookies:
+            temp_cookie_file = os.path.join(DOWNLOAD_DIR, f'cookies_db_{uuid.uuid4()}.txt')
+            with open(temp_cookie_file, 'w') as f: f.write(db_cookies)
+            ydl_opts['cookiefile'] = temp_cookie_file
+
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                # Descargar
+                info = ydl.extract_info(url, download=True)
+
+                # Recolectar archivos descargados
+                files = []
+                if 'entries' in info:
+                    for entry in info['entries']:
+                        if entry:
+                            filename = ydl.prepare_filename(entry)
+                            # Fix filename extension check
+                            base = os.path.splitext(filename)[0]
+                            for ext in ['.mp4', '.mkv', '.webm', '.mov']:
+                                if os.path.exists(base + ext):
+                                    files.append(base + ext)
+                                    break
+
+                return {
+                    'success': True,
+                    'files': files,
+                    'title': info.get('title', 'Playlist')
+                }
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+        finally:
+            if temp_cookie_file and os.path.exists(temp_cookie_file):
+                try: os.remove(temp_cookie_file)
+                except: pass
+
     async def download_image(self, url, chat_id):
         """Descarga imágenes"""
         output_path = os.path.join(DOWNLOAD_DIR, f'{chat_id}_%(title)s.%(ext)s')
@@ -284,12 +340,17 @@ class VideoDownloader:
                 'error': str(e)
             }
     
-    async def download_video(self, url, chat_id, user_id=None):
+    async def download_video(self, url, chat_id, user_id=None, height=None):
         """Descarga el video usando yt-dlp"""
         output_path = os.path.join(DOWNLOAD_DIR, f'{chat_id}_%(title)s.%(ext)s')
 
+        # Formato base
+        format_str = 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best'
+        if height:
+            format_str = f'bestvideo[height<={height}][ext=mp4]+bestaudio[ext=m4a]/best[height<={height}][ext=mp4]/best'
+
         ydl_opts = {
-            'format': 'best[ext=mp4]/best',
+            'format': format_str,
             'outtmpl': output_path,
             'quiet': False,
             'no_warnings': False,
@@ -322,14 +383,14 @@ class VideoDownloader:
 
         # Configuraciones específicas por plataforma
         if platform == 'tiktok':
-            ydl_opts['format'] = 'best[ext=mp4]/best'
+            if not height: ydl_opts['format'] = 'best[ext=mp4]/best'
             # TikTok específico
             ydl_opts['extractor_args'] = {'tiktok': {'api_hostname': 'api22-normal-c-useast2a.tiktokv.com'}}
         elif platform == 'instagram':
-            ydl_opts['format'] = 'best[ext=mp4]/best'
+            if not height: ydl_opts['format'] = 'best[ext=mp4]/best'
             # Instagram necesita cookies para cuentas privadas
         elif platform == 'youtube':
-            ydl_opts['format'] = 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best'
+            if not height: ydl_opts['format'] = 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best'
             # Configuración adicional para evitar detección de bot en YouTube
             ydl_opts['extractor_args'] = {
                 'youtube': {
@@ -344,7 +405,7 @@ class VideoDownloader:
                     ydl_opts['cookiefile'] = cookies_file
         elif platform == 'twitter':
             # Configuración específica para Twitter/X
-            ydl_opts['format'] = 'best[ext=mp4]/best'
+            if not height: ydl_opts['format'] = 'best[ext=mp4]/best'
             # Añadir extractor args específicos para Twitter
             ydl_opts['extractor_args'] = {
                 'twitter': {
@@ -757,27 +818,105 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'expires_at': expiration_time
         }
 
-        # Crear botones inline
-        keyboard = [
-            [
-                InlineKeyboardButton("📥 Solo Descargar", callback_data=f"download_{request_id}"),
-                InlineKeyboardButton("📝 Solo Transcribir", callback_data=f"transcribe_{request_id}")
-            ],
-            [
-                InlineKeyboardButton("📥+📝 Descargar y Transcribir", callback_data=f"both_{request_id}")
-            ]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
+        # Analizar URL para opciones avanzadas (Playlist, Calidad)
+        await analyze_and_show_options(update, context, url, platform, request_id)
 
+async def analyze_and_show_options(update, context, url, platform, request_id):
+    """Analiza la URL y muestra opciones de descarga"""
+
+    # Mensaje temporal
+    temp_msg = await update.message.reply_text("🔍 Analizando enlace...")
+
+    # Ejecutar yt-dlp -J para obtener info rápida
+    try:
+        cmd = ['yt-dlp', '-J', '--flat-playlist', url]
+        process = await asyncio.create_subprocess_exec(
+            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await process.communicate()
+
+        if process.returncode != 0:
+             # Si falla el análisis, fallback al menú básico
+             await temp_msg.delete()
+             await show_basic_menu(update, url, platform, request_id)
+             return
+
+        info = json.loads(stdout.decode())
+
+        # Detectar si es Playlist
+        is_playlist = info.get('_type') == 'playlist' or (info.get('entries') is not None and len(info.get('entries')) > 1)
+
+        keyboard = []
+
+        if is_playlist:
+            count = len(info.get('entries', []))
+            title = info.get('title', 'Lista de Reproducción')
+            keyboard.append([InlineKeyboardButton(f"📚 Descargar Playlist ({count} videos)", callback_data=f"playlist_all_{request_id}")])
+            keyboard.append([InlineKeyboardButton("1️⃣ Descargar solo el primero", callback_data=f"download_{request_id}")])
+        else:
+            # Opciones de video único
+            keyboard.append([InlineKeyboardButton("🎬 Mejor Calidad (Video+Audio)", callback_data=f"download_{request_id}")])
+            keyboard.append([InlineKeyboardButton("🎵 Solo Audio (MP3)", callback_data=f"audio_{request_id}")])
+
+            # Opciones de calidad (simplificado)
+            formats = info.get('formats', [])
+            has_1080 = any(f.get('height') == 1080 for f in formats)
+            has_720 = any(f.get('height') == 720 for f in formats)
+            has_480 = any(f.get('height') == 480 for f in formats)
+
+            row = []
+            if has_1080: row.append(InlineKeyboardButton("1080p", callback_data=f"quality_1080_{request_id}"))
+            if has_720: row.append(InlineKeyboardButton("720p", callback_data=f"quality_720_{request_id}"))
+            if has_480: row.append(InlineKeyboardButton("480p", callback_data=f"quality_480_{request_id}"))
+            if row: keyboard.append(row)
+
+        keyboard.append([InlineKeyboardButton("📝 Transcribir Audio", callback_data=f"transcribe_{request_id}")])
+        keyboard.append([InlineKeyboardButton("📥+📝 Todo (Video + Transcripción)", callback_data=f"both_{request_id}")])
+
+        reply_markup = InlineKeyboardMarkup(keyboard)
         platform_display = platform.upper() if platform != 'generic' else 'VIDEO'
+        title = info.get('title', url)
+
+        await temp_msg.delete()
+
+        # Escapar caracteres para Markdown
+        safe_title = str(title).replace('_', '\\_').replace('*', '\\*').replace('`', '\\`').replace('[', '\\[')
 
         await update.message.reply_text(
-            f"🎬 Enlace detectado: {url}\n"
-            f"🌐 Plataforma: *{platform_display}*\n\n"
+            f"🎬 *{safe_title}*\n"
+            f"🌐 Plataforma: *{platform_display}*\n"
+            f"{'📚 ES UNA PLAYLIST' if is_playlist else ''}\n"
             "¿Qué deseas hacer?",
             reply_markup=reply_markup,
             parse_mode='Markdown'
         )
+
+    except Exception as e:
+        logger.error(f"Error analizando URL: {e}")
+        await temp_msg.delete()
+        await show_basic_menu(update, url, platform, request_id)
+
+async def show_basic_menu(update, url, platform, request_id):
+    """Muestra el menú básico si falla el análisis avanzado"""
+    keyboard = [
+        [
+            InlineKeyboardButton("📥 Solo Descargar", callback_data=f"download_{request_id}"),
+            InlineKeyboardButton("📝 Solo Transcribir", callback_data=f"transcribe_{request_id}")
+        ],
+        [
+            InlineKeyboardButton("📥+📝 Descargar y Transcribir", callback_data=f"both_{request_id}")
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    platform_display = platform.upper() if platform != 'generic' else 'VIDEO'
+
+    await update.message.reply_text(
+        f"🎬 Enlace detectado: {url}\n"
+        f"🌐 Plataforma: *{platform_display}*\n\n"
+        "¿Qué deseas hacer?",
+        reply_markup=reply_markup,
+        parse_mode='Markdown'
+    )
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Maneja los callbacks de los botones inline"""
@@ -825,20 +964,27 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await process_transcribe_only(query, url, platform, chat_id)
     elif action == 'both':
         await process_both(query, url, platform, chat_id)
+    elif action.startswith('quality_'):
+        height = action.split('_')[1]
+        await process_download_only(query, url, platform, chat_id, height=height)
+    elif action == 'audio':
+        await process_audio_only(query, url, platform, chat_id)
+    elif action == 'playlist_all':
+        await process_playlist(query, url, platform, chat_id)
 
-async def process_download_only(query, url, platform, chat_id):
+async def process_download_only(query, url, platform, chat_id, height=None):
     """Procesa solo la descarga del video"""
     user_id = query.from_user.id
 
-    await query.edit_message_text(
-        f"⏳ Descargando video de *{platform.upper()}*...\n"
-        "Esto puede tomar unos momentos.",
-        parse_mode='Markdown'
-    )
+    msg_text = f"⏳ Descargando video de *{platform.upper()}*"
+    if height: msg_text += f" ({height}p)"
+    msg_text += "...\nEsto puede tomar unos momentos."
+
+    await query.edit_message_text(msg_text, parse_mode='Markdown')
 
     try:
         # Descargar video
-        result = await downloader.download_video(url, chat_id, user_id=user_id)
+        result = await downloader.download_video(url, chat_id, user_id=user_id, height=height)
 
         if not result['success']:
             await query.edit_message_text(
@@ -1145,11 +1291,17 @@ def main():
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("platforms", platforms))
     application.add_handler(CommandHandler("logout_twitter", logout_twitter))
+    application.add_handler(CommandHandler("subscribe", subscribe_command))
+    application.add_handler(CommandHandler("unsubscribe", unsubscribe_command))
     application.add_handler(login_conversation)
-    application.add_handler(CallbackQueryHandler(button_callback, pattern=r'^(download|transcribe|both)_.+$'))
+    application.add_handler(CallbackQueryHandler(button_callback, pattern=r'^(download|transcribe|both|quality_|audio|playlist_all)_.+$'))
     application.add_handler(CallbackQueryHandler(handle_login_callback, pattern=r'^(replace|cancel)_login_\d+$'))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_url))
     application.add_error_handler(error_handler)
+
+    # Iniciar Scheduler
+    scheduler.start()
+    scheduler.add_job(check_subscriptions, 'interval', minutes=60, args=[application])
 
     # Iniciar bot
     logger.info("Bot iniciado...")
@@ -1157,3 +1309,159 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+async def process_playlist(query, url, platform, chat_id):
+    """Procesa una playlist"""
+    await query.edit_message_text(f"⏳ Descargando playlist de *{platform.upper()}* (Máx 10 videos)...\nEsto puede tardar.", parse_mode='Markdown')
+
+    result = await downloader.download_playlist(url, chat_id)
+
+    if not result['success']:
+        await query.edit_message_text(f"❌ Error: {result['error']}")
+        return
+
+    await query.edit_message_text(f"✅ Playlist descargada: {len(result['files'])} videos.\nEnviando...")
+
+    for file_path in result['files']:
+        try:
+            with open(file_path, 'rb') as f:
+                await query.message.reply_video(f, caption=f"🔗 {url}")
+            os.remove(file_path)
+        except Exception as e:
+            logger.error(f"Error enviando video de playlist: {e}")
+
+    await query.delete_message()
+
+async def process_audio_only(query, url, platform, chat_id):
+    """Descarga solo audio"""
+    await query.edit_message_text("🎵 Descargando audio...", parse_mode='Markdown')
+
+    # Reutilizamos download_video pero luego extraemos audio
+    # Nota: Idealmente yt-dlp descargaría directo audio, pero por simplicidad convertimos
+    res = await downloader.download_video(url, chat_id)
+    if not res['success']:
+        await query.edit_message_text(f"❌ Error: {res['error']}")
+        return
+
+    await query.edit_message_text("🎵 Convirtiendo a MP3...")
+    audio_res = await downloader.extract_audio(res['filename'])
+
+    if audio_res['success']:
+        with open(audio_res['audio_path'], 'rb') as f:
+            await query.message.reply_audio(f, title=res.get('title', 'Audio'))
+        os.remove(audio_res['audio_path'])
+
+    # Limpiar video
+    if os.path.exists(res['filename']): os.remove(res['filename'])
+    await query.delete_message()
+
+async def subscribe_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Suscribirse a un canal/perfil"""
+    if not context.args:
+        await update.message.reply_text("❌ Uso: /subscribe <url_perfil>")
+        return
+
+    url = context.args[0]
+    user_id = update.effective_user.id
+    platform = downloader.get_platform(url) or 'generic'
+
+    try:
+        conn = sqlite3.connect(DATABASE_PATH)
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO subscriptions (user_id, url, platform)
+            VALUES (?, ?, ?)
+        ''', (user_id, url, platform))
+        conn.commit()
+        conn.close()
+        await update.message.reply_text(f"✅ Suscrito exitosamente a: {url}\nRevisaré contenido nuevo cada hora.")
+    except sqlite3.IntegrityError:
+        await update.message.reply_text("⚠️ Ya estás suscrito a este enlace.")
+    except Exception as e:
+        logger.error(f"Error suscripción: {e}")
+        await update.message.reply_text("❌ Error al guardar suscripción.")
+
+async def unsubscribe_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Desuscribirse"""
+    if not context.args:
+        await update.message.reply_text("❌ Uso: /unsubscribe <url_perfil>")
+        return
+
+    url = context.args[0]
+    user_id = update.effective_user.id
+
+    conn = sqlite3.connect(DATABASE_PATH)
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM subscriptions WHERE user_id = ? AND url = ?', (user_id, url))
+
+    if cursor.rowcount > 0:
+        await update.message.reply_text(f"✅ Suscripción eliminada: {url}")
+    else:
+        await update.message.reply_text("⚠️ No se encontró esa suscripción.")
+
+    conn.commit()
+    conn.close()
+
+async def check_subscriptions(application: Application):
+    """Revisa suscripciones periódicamente"""
+    logger.info("Revisando suscripciones...")
+    if not os.path.exists(DATABASE_PATH): return
+
+    try:
+        conn = sqlite3.connect(DATABASE_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        cursor.execute('SELECT * FROM subscriptions')
+        subs = cursor.fetchall()
+
+        for sub in subs:
+            # Lógica simple: Descargar videos más nuevos que la última revisión
+            # Usamos yt-dlp --dateafter
+            last_check = datetime.strptime(sub['last_checked'], '%Y-%m-%d %H:%M:%S')
+
+            # Actualizar timestamp
+            cursor.execute('UPDATE subscriptions SET last_checked = CURRENT_TIMESTAMP WHERE id = ?', (sub['id'],))
+            conn.commit()
+
+            # Chequeo básico: Obtener el último video del canal/perfil
+            try:
+                cmd = ['yt-dlp', '-J', '--flat-playlist', '--playlist-end', '1', sub['url']]
+                process = await asyncio.create_subprocess_exec(
+                    *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+                )
+                stdout, stderr = await process.communicate()
+
+                if process.returncode == 0:
+                    info = json.loads(stdout.decode())
+
+                    # Obtener el último item
+                    latest_entry = None
+                    if 'entries' in info:
+                        entries = list(info['entries'])
+                        if entries: latest_entry = entries[0]
+
+                    if latest_entry:
+                        # En un sistema real, guardaríamos el ID del último video visto para comparar.
+                        # Por ahora, solo logueamos que encontramos contenido.
+                        # Una mejora futura sería comparar latest_entry['id'] con un campo 'last_video_id' en la DB.
+                        video_title = latest_entry.get('title', 'Nuevo Video')
+                        video_url = latest_entry.get('url', sub['url'])
+
+                        logger.info(f"Suscripción {sub['url']}: Último video encontrado '{video_title}'")
+
+                        # Opcional: Notificar si es muy reciente (ej. última hora)
+                        # Esto requiere más lógica de parseo de fechas que yt-dlp -J a veces complica.
+            except Exception as check_error:
+                logger.error(f"Error chequeando {sub['url']}: {check_error}")
+
+    except Exception as e:
+        logger.error(f"Error scheduler: {e}")
+    finally:
+        try: conn.close()
+        except: pass
+
+# async def handle_torrent(update: Update, context: ContextTypes.DEFAULT_TYPE):
+#     """Maneja enlaces magnet y archivos torrent"""
+#     # Pendiente de implementación completa con aria2c
+#     pass
