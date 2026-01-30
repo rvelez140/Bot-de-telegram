@@ -1,0 +1,36 @@
+---
+# Playbook principal - Telegram Video Bot
+# Provisiona un servidor con Docker, seguridad hardened, y el bot desplegado
+#
+# Uso:
+#   ansible-playbook playbook.yml -i inventory.yml
+#   ansible-playbook playbook.yml -i inventory.yml -e telegram_bot_token=TU_TOKEN
+#
+# Requisitos:
+#   - Ansible 2.14+
+#   - community.docker >= 3.4.0
+#   - community.general >= 8.0.0
+
+- name: Provisionar y desplegar Telegram Video Bot
+  hosts: bot_servers
+  become: true
+
+  pre_tasks:
+    - name: Verificar sistema operativo soportado
+      ansible.builtin.assert:
+        that:
+          - ansible_os_family in ['Debian', 'RedHat', 'Darwin']
+        fail_msg: "Sistema operativo no soportado: {{ ansible_os_family }}"
+        success_msg: "Sistema operativo soportado: {{ ansible_distribution }} {{ ansible_distribution_version }}"
+
+    - name: Verificar que el token del bot esta configurado
+      ansible.builtin.assert:
+        that:
+          - telegram_bot_token != ''
+          - telegram_bot_token != 'tu_token_aqui'
+        fail_msg: >
+          El token del bot de Telegram no esta configurado.
+          Usa: -e telegram_bot_token=TU_TOKEN o configuralo en defaults/main.yml
+
+  roles:
+    - role: telegram-bot

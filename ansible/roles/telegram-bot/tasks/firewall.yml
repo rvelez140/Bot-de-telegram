@@ -1,0 +1,12 @@
+---
+# ============================================================================
+# Firewall Configuration - OS Dispatcher
+# ============================================================================
+
+- name: Configurar firewall (Linux)
+  ansible.builtin.include_tasks: firewall-linux.yml
+  when: ansible_os_family in ['Debian', 'RedHat']
+
+- name: Configurar firewall (macOS)
+  ansible.builtin.include_tasks: firewall-macos.yml
+  when: ansible_os_family == 'Darwin'

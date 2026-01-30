@@ -1,0 +1,27 @@
+---
+# ============================================================================
+# System Tools - macOS
+# ============================================================================
+
+- name: Verificar Homebrew instalado
+  ansible.builtin.stat:
+    path: /opt/homebrew/bin/brew
+  register: homebrew_check
+
+- name: Verificar Homebrew (Intel Mac)
+  ansible.builtin.stat:
+    path: /usr/local/bin/brew
+  register: homebrew_check_intel
+  when: not homebrew_check.stat.exists
+
+- name: Instalar paquetes con Homebrew
+  community.general.homebrew:
+    name:
+      - git
+      - curl
+      - wget
+      - ffmpeg
+      - jq
+      - htop
+    state: present
+  when: homebrew_check.stat.exists or (homebrew_check_intel.stat is defined and homebrew_check_intel.stat.exists)

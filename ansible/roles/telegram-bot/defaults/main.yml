@@ -1,0 +1,71 @@
+---
+# ============================================================================
+# Telegram Video Bot - Variables de configuracion por defecto
+# ============================================================================
+# Sobrescribe estas variables en tu inventory.yml o con -e en linea de comandos
+
+# --- Bot Configuration ---
+telegram_bot_token: ""
+flask_secret_key: "{{ lookup('password', '/dev/null length=32 chars=hexdigits') }}"
+
+# --- System User ---
+bot_user: "telegrambot"
+bot_home: "/home/{{ bot_user }}"
+bot_ssh_keys: []
+# Ejemplo:
+#   bot_ssh_keys:
+#     - "ssh-ed25519 AAAA... user@host"
+
+# --- Application Paths ---
+bot_install_dir: "{{ bot_home }}/telegram-video-bot"
+bot_downloads_dir: "{{ bot_install_dir }}/downloads"
+bot_data_dir: "{{ bot_install_dir }}/data"
+bot_repo_url: "https://github.com/rvelez140/Bot-de-telegram.git"
+bot_repo_branch: "main"
+
+# --- Docker ---
+docker_log_max_size: "10m"
+docker_log_max_file: "3"
+docker_daemon_config:
+  iptables: true
+  ip-forward: true
+  userland-proxy: false
+  live-restore: true
+  log-driver: json-file
+  log-opts:
+    max-size: "{{ docker_log_max_size }}"
+    max-file: "{{ docker_log_max_file }}"
+  default-address-pools:
+    - base: "172.17.0.0/12"
+      size: 24
+
+# --- Web Interface ---
+web_port: 5000
+web_bind_address: "127.0.0.1"
+
+# --- Resource Limits ---
+bot_cpu_limit: "2.0"
+bot_memory_limit: "2G"
+web_cpu_limit: "1.0"
+web_memory_limit: "1G"
+
+# --- Firewall (UFW) ---
+firewall_enabled: true
+firewall_allowed_ports:
+  - { port: 22, proto: tcp, comment: "SSH" }
+  # Puerto web solo accesible via reverse proxy o Tailscale
+  # - { port: 5000, proto: tcp, comment: "Web Interface" }
+
+# --- Tailscale VPN (opcional) ---
+tailscale_enabled: false
+tailscale_authkey: ""
+tailscale_port: 41641
+
+# --- Security Hardening ---
+security_hardening_enabled: true
+docker_user_chain_enabled: true
+
+# --- Backup ---
+backup_enabled: false
+backup_dir: "{{ bot_home }}/backups"
+backup_retention_days: 7

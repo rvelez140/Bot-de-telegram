@@ -1,0 +1,12 @@
+---
+# ============================================================================
+# Docker Installation - OS Dispatcher
+# ============================================================================
+
+- name: Instalar Docker (Linux - Debian/Ubuntu)
+  ansible.builtin.include_tasks: docker-linux.yml
+  when: ansible_os_family in ['Debian', 'RedHat']
+
+- name: Instalar Docker (macOS)
+  ansible.builtin.include_tasks: docker-macos.yml
+  when: ansible_os_family == 'Darwin'

@@ -1,0 +1,83 @@
+---
+# ============================================================================
+# Firewall - UFW + DOCKER-USER Chain (Linux)
+# Adaptado del modelo de seguridad de clawdbot-ansible
+# ============================================================================
+# Implementa 4 capas de seguridad:
+#   1. UFW: deny incoming, allow outgoing
+#   2. DOCKER-USER iptables chain: bloquea acceso externo a contenedores
+#   3. Binding: Docker solo en 127.0.0.1
+#   4. Proceso: usuario no-root
+
+- name: Instalar UFW
+  ansible.builtin.apt:
+    name: ufw
+    state: present
+
+# --- Capa 1: UFW Base Rules ---
+- name: Configurar politica por defecto - denegar entrada
+  community.general.ufw:
+    direction: incoming
+    policy: deny
+
+- name: Configurar politica por defecto - permitir salida
+  community.general.ufw:
+    direction: outgoing
+    policy: allow
+
+- name: Configurar politica por defecto - denegar enrutamiento
+  community.general.ufw:
+    direction: routed
+    policy: deny
+
+- name: Permitir puertos configurados
+  community.general.ufw:
+    rule: allow
+    port: "{{ item.port | string }}"
+    proto: "{{ item.proto }}"
+    comment: "{{ item.comment | default('') }}"
+  loop: "{{ firewall_allowed_ports }}"
+
+- name: Permitir Tailscale UDP
+  community.general.ufw:
+    rule: allow
+    port: "{{ tailscale_port | string }}"
+    proto: udp
+    comment: "Tailscale VPN"
+  when: tailscale_enabled | bool
+
+# --- Capa 2: DOCKER-USER iptables chain ---
+- name: Configurar DOCKER-USER chain en UFW after.rules
+  ansible.builtin.blockinfile:
+    path: /etc/ufw/after.rules
+    marker: "# {mark} ANSIBLE MANAGED - DOCKER-USER CHAIN"
+    block: |
+      *filter
+      :DOCKER-USER - [0:0]
+      # Permitir conexiones establecidas
+      -A DOCKER-USER -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN
+      # Permitir trafico desde localhost
+      -A DOCKER-USER -s 127.0.0.0/8 -j RETURN
+      # Permitir trafico desde redes Docker internas
+      -A DOCKER-USER -s 172.16.0.0/12 -j RETURN
+      # Permitir trafico desde Tailscale (si habilitado)
+      -A DOCKER-USER -s 100.64.0.0/10 -j RETURN
+      # Detectar interfaz externa y bloquear acceso directo a contenedores
+      -A DOCKER-USER -i {{ ansible_default_ipv4.interface | default('eth0') }} -j DROP
+      COMMIT
+    insertbefore: "^# don't delete the 'COMMIT'"
+  when: docker_user_chain_enabled | bool
+  notify: Reiniciar UFW
+
+- name: Habilitar UFW
+  community.general.ufw:
+    state: enabled
+
+- name: Verificar estado de UFW
+  ansible.builtin.command: ufw status verbose
+  register: ufw_status
+  changed_when: false
+
+- name: Mostrar estado del firewall
+  ansible.builtin.debug:
+    msg: "{{ ufw_status.stdout_lines }}"

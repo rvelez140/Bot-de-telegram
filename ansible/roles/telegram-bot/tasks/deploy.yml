@@ -1,0 +1,83 @@
+---
+# ============================================================================
+# Bot Deployment - Clonar repo, configurar y levantar con Docker Compose
+# ============================================================================
+
+- name: Clonar repositorio del bot
+  ansible.builtin.git:
+    repo: "{{ bot_repo_url }}"
+    dest: "{{ bot_install_dir }}"
+    version: "{{ bot_repo_branch }}"
+    force: false
+  become: true
+  become_user: "{{ bot_user }}"
+
+- name: Crear archivo .env desde template
+  ansible.builtin.template:
+    src: env.j2
+    dest: "{{ bot_install_dir }}/.env"
+    owner: "{{ bot_user }}"
+    group: "{{ bot_user }}"
+    mode: "0600"
+  no_log: true
+
+- name: Crear docker-compose.override.yml con configuracion hardened
+  ansible.builtin.template:
+    src: docker-compose.override.yml.j2
+    dest: "{{ bot_install_dir }}/docker-compose.override.yml"
+    owner: "{{ bot_user }}"
+    group: "{{ bot_user }}"
+    mode: "0644"
+
+- name: Crear directorios de datos
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ bot_user }}"
+    group: "{{ bot_user }}"
+    mode: "0755"
+  loop:
+    - "{{ bot_downloads_dir }}"
+    - "{{ bot_data_dir }}"
+
+- name: Construir imagenes Docker
+  community.docker.docker_compose_v2:
+    project_src: "{{ bot_install_dir }}"
+    build: always
+    state: present
+  become: true
+  become_user: "{{ bot_user }}"
+  register: docker_build_result
+
+- name: Iniciar servicios con Docker Compose
+  community.docker.docker_compose_v2:
+    project_src: "{{ bot_install_dir }}"
+    state: present
+  become: true
+  become_user: "{{ bot_user }}"
+  register: docker_compose_result
+
+- name: Instalar servicio systemd para auto-inicio
+  ansible.builtin.template:
+    src: telegram-bot.service.j2
+    dest: /etc/systemd/system/telegram-video-bot.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Habilitar servicio del bot
+
+- name: Verificar que los contenedores estan corriendo
+  ansible.builtin.command: docker compose ps --format json
+  args:
+    chdir: "{{ bot_install_dir }}"
+  become: true
+  become_user: "{{ bot_user }}"
+  register: containers_status
+  changed_when: false
+
+- name: Mostrar estado del despliegue
+  ansible.builtin.debug:
+    msg:
+      - "Bot desplegado en: {{ bot_install_dir }}"
+      - "Contenedores activos: {{ containers_status.stdout }}"
+      - "Web interface: http://127.0.0.1:{{ web_port }}"

@@ -1,0 +1,15 @@
+---
+# ============================================================================
+# Tailscale VPN - macOS
+# ============================================================================
+
+- name: Instalar Tailscale via Homebrew
+  community.general.homebrew_cask:
+    name: tailscale
+    state: present
+
+- name: Informar sobre Tailscale en macOS
+  ansible.builtin.debug:
+    msg: >
+      Tailscale instalado. Abre la aplicacion desde Applications
+      y autenticate con tu cuenta de Tailscale.

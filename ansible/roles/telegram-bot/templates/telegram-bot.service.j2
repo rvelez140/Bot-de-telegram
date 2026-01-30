@@ -1,0 +1,44 @@
+# Generado por Ansible
+# Servicio systemd para Telegram Video Bot (Docker Compose)
+
+[Unit]
+Description=Telegram Video Downloader Bot
+Documentation=https://github.com/rvelez140/Bot-de-telegram
+After=network-online.target docker.service
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User={{ bot_user }}
+Group={{ bot_user }}
+WorkingDirectory={{ bot_install_dir }}
+
+# Variables de entorno
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=COMPOSE_PROJECT_NAME=telegram-video-bot
+
+# Comandos
+ExecStartPre=/usr/bin/docker compose pull --ignore-pull-failures
+ExecStart=/usr/bin/docker compose up -d --remove-orphans
+ExecStop=/usr/bin/docker compose down
+ExecReload=/usr/bin/docker compose up -d --build --remove-orphans
+
+# Reinicio automatico
+Restart=on-failure
+RestartSec=10
+
+# Seguridad del proceso (hardening systemd)
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths={{ bot_install_dir }}
+
+# Timeouts
+TimeoutStartSec=300
+TimeoutStopSec=60
+
+[Install]
+WantedBy=multi-user.target

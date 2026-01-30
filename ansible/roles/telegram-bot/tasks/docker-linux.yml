@@ -1,0 +1,87 @@
+---
+# ============================================================================
+# Docker CE Installation - Linux (Debian/Ubuntu)
+# ============================================================================
+
+- name: Verificar si Docker ya esta instalado
+  ansible.builtin.command: docker --version
+  register: docker_installed
+  changed_when: false
+  failed_when: false
+
+- name: Instalar Docker CE
+  when: docker_installed.rc != 0
+  block:
+    - name: Eliminar versiones antiguas de Docker
+      ansible.builtin.apt:
+        name:
+          - docker
+          - docker-engine
+          - docker.io
+          - containerd
+          - runc
+        state: absent
+
+    - name: Crear directorio para keyrings
+      ansible.builtin.file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: "0755"
+
+    - name: Descargar clave GPG de Docker
+      ansible.builtin.get_url:
+        url: "https://download.docker.com/linux/{{ ansible_distribution | lower }}/gpg"
+        dest: /etc/apt/keyrings/docker.asc
+        mode: "0644"
+
+    - name: Agregar repositorio de Docker
+      ansible.builtin.apt_repository:
+        repo: >-
+          deb [arch={{ ansible_architecture | replace('x86_64', 'amd64') | replace('aarch64', 'arm64') }}
+          signed-by=/etc/apt/keyrings/docker.asc]
+          https://download.docker.com/linux/{{ ansible_distribution | lower }}
+          {{ ansible_distribution_release }} stable
+        state: present
+        filename: docker
+
+    - name: Instalar Docker CE y plugins
+      ansible.builtin.apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-buildx-plugin
+          - docker-compose-plugin
+        state: present
+        update_cache: true
+
+- name: Asegurar que Docker esta iniciado y habilitado
+  ansible.builtin.systemd:
+    name: docker
+    state: started
+    enabled: true
+
+- name: Configurar Docker daemon
+  ansible.builtin.template:
+    src: daemon.json.j2
+    dest: /etc/docker/daemon.json
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reiniciar Docker
+
+- name: Verificar instalacion de Docker
+  ansible.builtin.command: docker --version
+  register: docker_version_check
+  changed_when: false
+
+- name: Verificar Docker Compose
+  ansible.builtin.command: docker compose version
+  register: compose_version_check
+  changed_when: false
+
+- name: Mostrar versiones instaladas
+  ansible.builtin.debug:
+    msg:
+      - "Docker: {{ docker_version_check.stdout }}"
+      - "Compose: {{ compose_version_check.stdout }}"

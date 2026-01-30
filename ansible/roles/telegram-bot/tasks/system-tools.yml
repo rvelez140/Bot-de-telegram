@@ -1,0 +1,20 @@
+---
+# ============================================================================
+# System Tools - OS Dispatcher
+# ============================================================================
+
+- name: Detectar sistema operativo
+  ansible.builtin.debug:
+    msg: "Sistema detectado: {{ ansible_os_family }} ({{ ansible_distribution }})"
+
+- name: Instalar herramientas del sistema (Linux - Debian/Ubuntu)
+  ansible.builtin.include_tasks: system-tools-linux.yml
+  when: ansible_os_family == 'Debian'
+
+- name: Instalar herramientas del sistema (Linux - RedHat/CentOS)
+  ansible.builtin.include_tasks: system-tools-redhat.yml
+  when: ansible_os_family == 'RedHat'
+
+- name: Instalar herramientas del sistema (macOS)
+  ansible.builtin.include_tasks: system-tools-macos.yml
+  when: ansible_os_family == 'Darwin'

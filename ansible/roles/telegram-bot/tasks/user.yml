@@ -1,0 +1,58 @@
+---
+# ============================================================================
+# User Management - Crear usuario dedicado para el bot
+# ============================================================================
+
+- name: Crear grupo del bot
+  ansible.builtin.group:
+    name: "{{ bot_user }}"
+    state: present
+  when: ansible_os_family != 'Darwin'
+
+- name: Crear usuario del bot
+  ansible.builtin.user:
+    name: "{{ bot_user }}"
+    group: "{{ bot_user }}"
+    home: "{{ bot_home }}"
+    shell: /bin/bash
+    create_home: true
+    system: false
+    comment: "Telegram Video Bot service account"
+  when: ansible_os_family != 'Darwin'
+
+- name: Agregar usuario al grupo docker
+  ansible.builtin.user:
+    name: "{{ bot_user }}"
+    groups: docker
+    append: true
+  when: ansible_os_family != 'Darwin'
+
+- name: Configurar llaves SSH autorizadas
+  ansible.posix.authorized_key:
+    user: "{{ bot_user }}"
+    key: "{{ item }}"
+    state: present
+  loop: "{{ bot_ssh_keys }}"
+  when:
+    - bot_ssh_keys | length > 0
+    - ansible_os_family != 'Darwin'
+
+- name: Habilitar lingering para el usuario (systemd user services)
+  ansible.builtin.command: loginctl enable-linger {{ bot_user }}
+  changed_when: false
+  failed_when: false
+  when: ansible_os_family != 'Darwin'
+
+- name: Crear directorios del bot
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ bot_user }}"
+    group: "{{ bot_user }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: "{{ bot_install_dir }}", mode: "0755" }
+    - { path: "{{ bot_downloads_dir }}", mode: "0755" }
+    - { path: "{{ bot_data_dir }}", mode: "0755" }
+    - { path: "{{ bot_home }}/.config", mode: "0755" }
+  when: ansible_os_family != 'Darwin'

@@ -1,0 +1,12 @@
+---
+# ============================================================================
+# Tailscale VPN Installation - OS Dispatcher
+# ============================================================================
+
+- name: Instalar Tailscale (Linux)
+  ansible.builtin.include_tasks: tailscale-linux.yml
+  when: ansible_os_family in ['Debian', 'RedHat']
+
+- name: Instalar Tailscale (macOS)
+  ansible.builtin.include_tasks: tailscale-macos.yml
+  when: ansible_os_family == 'Darwin'

@@ -1,0 +1,47 @@
+# Generado por Ansible - Configuracion hardened
+# Sobrescribe docker-compose.yml con parametros de seguridad
+# Fecha: {{ ansible_date_time.iso8601 }}
+
+version: '3.8'
+
+services:
+  telegram-downloader-bot:
+    # Seguridad: limitar capacidades del contenedor
+    security_opt:
+      - no-new-privileges:true
+    # Recursos ajustados
+    deploy:
+      resources:
+        limits:
+          cpus: '{{ bot_cpu_limit }}'
+          memory: {{ bot_memory_limit }}
+    # Logging hardened
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "{{ docker_log_max_size }}"
+        max-file: "{{ docker_log_max_file }}"
+    # Read-only root filesystem donde sea posible
+    read_only: false
+    tmpfs:
+      - /tmp:size=256M
+
+  web-interface:
+    # Seguridad: bind solo a localhost (acceso via reverse proxy o Tailscale)
+    ports:
+      - "{{ web_bind_address }}:{{ web_port }}:5000"
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: '{{ web_cpu_limit }}'
+          memory: {{ web_memory_limit }}
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "{{ docker_log_max_size }}"
+        max-file: "{{ docker_log_max_file }}"
+    read_only: false
+    tmpfs:
+      - /tmp:size=128M

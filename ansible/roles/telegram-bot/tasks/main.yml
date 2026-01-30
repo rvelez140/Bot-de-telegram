@@ -1,0 +1,37 @@
+---
+# ============================================================================
+# Task Orchestrator - Telegram Video Bot
+# ============================================================================
+# Ejecuta tareas en orden critico:
+#   1. Herramientas del sistema (git, curl, etc.)
+#   2. Tailscale VPN (opcional)
+#   3. Usuario dedicado del bot
+#   4. Docker Engine + Compose
+#   5. Firewall (UFW + DOCKER-USER chain) - DEBE ser despues de Docker
+#   6. Despliegue del bot
+
+- name: "Fase 1: Instalar herramientas del sistema"
+  ansible.builtin.include_tasks: system-tools.yml
+  tags: [system, setup]
+
+- name: "Fase 2: Configurar Tailscale VPN"
+  ansible.builtin.include_tasks: tailscale.yml
+  when: tailscale_enabled | bool
+  tags: [tailscale, network]
+
+- name: "Fase 3: Crear usuario del bot"
+  ansible.builtin.include_tasks: user.yml
+  tags: [user, setup]
+
+- name: "Fase 4: Instalar Docker"
+  ansible.builtin.include_tasks: docker.yml
+  tags: [docker, setup]
+
+- name: "Fase 5: Configurar firewall"
+  ansible.builtin.include_tasks: firewall.yml
+  when: firewall_enabled | bool
+  tags: [firewall, security]
+
+- name: "Fase 6: Desplegar bot"
+  ansible.builtin.include_tasks: deploy.yml
+  tags: [deploy, bot]

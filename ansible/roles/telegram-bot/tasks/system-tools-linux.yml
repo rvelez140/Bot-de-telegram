@@ -1,0 +1,38 @@
+---
+# ============================================================================
+# System Tools - Debian/Ubuntu
+# ============================================================================
+
+- name: Actualizar cache de apt
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Instalar paquetes base
+  ansible.builtin.apt:
+    name:
+      - git
+      - curl
+      - wget
+      - ca-certificates
+      - gnupg
+      - lsb-release
+      - apt-transport-https
+      - software-properties-common
+      - build-essential
+      - python3-pip
+      - python3-venv
+      - ffmpeg
+      - jq
+      - htop
+      - unzip
+    state: present
+
+- name: Verificar instalacion de FFmpeg
+  ansible.builtin.command: ffmpeg -version
+  register: ffmpeg_version
+  changed_when: false
+
+- name: Mostrar version de FFmpeg
+  ansible.builtin.debug:
+    msg: "FFmpeg: {{ ffmpeg_version.stdout_lines[0] }}"

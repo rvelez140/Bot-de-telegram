@@ -1,0 +1,29 @@
+---
+# ============================================================================
+# System Tools - RedHat/CentOS
+# ============================================================================
+
+- name: Instalar paquetes base (RedHat)
+  ansible.builtin.yum:
+    name:
+      - git
+      - curl
+      - wget
+      - ca-certificates
+      - gnupg2
+      - python3-pip
+      - jq
+      - htop
+      - unzip
+    state: present
+
+- name: Instalar EPEL repository
+  ansible.builtin.yum:
+    name: epel-release
+    state: present
+
+- name: Instalar FFmpeg desde RPM Fusion
+  ansible.builtin.yum:
+    name: ffmpeg
+    state: present
+  ignore_errors: true

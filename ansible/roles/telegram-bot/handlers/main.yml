@@ -1,0 +1,30 @@
+---
+# ============================================================================
+# Handlers - Telegram Video Bot
+# ============================================================================
+
+- name: Reiniciar Docker
+  ansible.builtin.systemd:
+    name: docker
+    state: restarted
+  when: ansible_os_family != 'Darwin'
+
+- name: Reiniciar UFW
+  ansible.builtin.service:
+    name: ufw
+    state: restarted
+  when: ansible_os_family != 'Darwin'
+
+- name: Habilitar servicio del bot
+  ansible.builtin.systemd:
+    name: telegram-video-bot
+    daemon_reload: true
+    enabled: true
+    state: started
+  when: ansible_os_family != 'Darwin'
+
+- name: Reiniciar bot
+  ansible.builtin.systemd:
+    name: telegram-video-bot
+    state: restarted
+  when: ansible_os_family != 'Darwin'

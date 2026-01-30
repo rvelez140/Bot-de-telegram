@@ -1,0 +1,16 @@
+---
+# ============================================================================
+# Firewall - macOS Application Firewall
+# ============================================================================
+
+- name: Verificar estado del Application Firewall
+  ansible.builtin.command: /usr/libexec/ApplicationFirewall/socketfilterfw --getglobalstate
+  register: macos_fw_state
+  changed_when: false
+  failed_when: false
+
+- name: Informar estado del firewall macOS
+  ansible.builtin.debug:
+    msg: >
+      macOS Application Firewall: {{ macos_fw_state.stdout | default('No disponible') }}.
+      Para configuracion avanzada, usa Preferencias del Sistema > Seguridad > Firewall.

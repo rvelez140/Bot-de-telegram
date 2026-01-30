@@ -1,0 +1,37 @@
+---
+# Inventario de ejemplo para Telegram Video Bot
+#
+# Copia este archivo como inventory.yml y modifica los valores:
+#   cp inventory.yml.example inventory.yml
+#
+# Para despliegue local:
+#   ansible-playbook playbook.yml -i inventory.yml --connection=local
+#
+# Para despliegue remoto:
+#   ansible-playbook playbook.yml -i inventory.yml
+
+all:
+  children:
+    bot_servers:
+      hosts:
+        # --- Despliegue local ---
+        localhost:
+          ansible_connection: local
+          ansible_python_interpreter: "{{ ansible_playbook_python }}"
+
+        # --- Despliegue remoto (descomentar y configurar) ---
+        # mi-vps:
+        #   ansible_host: 192.168.1.100
+        #   ansible_user: root
+        #   ansible_ssh_private_key_file: ~/.ssh/id_ed25519
+        #   ansible_port: 22
+
+      vars:
+        # Token del bot de Telegram (obligatorio)
+        telegram_bot_token: "tu_token_aqui"
+
+        # Clave secreta Flask (obligatorio para la web)
+        flask_secret_key: "cambia-esto-en-produccion"
+
+        # Tailscale auth key (opcional)
+        # tailscale_authkey: "tskey-auth-..."
