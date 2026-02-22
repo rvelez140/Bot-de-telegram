@@ -43,9 +43,10 @@ WORKDIR /app
 # Copiar archivos de dependencias
 COPY requirements.txt .
 
-# Actualizar pip y instalar dependencias de Python
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+# Actualizar tooling de build e instalar dependencias de Python
+# --no-build-isolation evita el fallo de openai-whisper por pkg_resources en ciertos entornos
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir --no-build-isolation -r requirements.txt
 
 # Instalar navegadores de Playwright (solo chromium)
 RUN playwright install chromium
@@ -62,8 +63,7 @@ COPY cookies.txt /app/cookies.txt
 # Crear directorio para descargas
 RUN mkdir -p /downloads && chmod 777 /downloads
 
-# Variable de entorno para el token (se debe configurar al ejecutar)
-ENV TELEGRAM_BOT_TOKEN=""
+# El token debe inyectarse en runtime (docker-compose / entorno), no en la imagen
 ENV PYTHONUNBUFFERED=1
 
 # Health check
