@@ -1,5 +1,11 @@
 FROM python:3.11-slim
 
+# Forzar UTF-8 para evitar errores de codificación en runtime/build
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
+ENV PYTHONUTF8=1
+ENV PYTHONIOENCODING=UTF-8
+
 # Instalar dependencias del sistema
 RUN apt-get update && \
     apt-get install -y \

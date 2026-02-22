@@ -220,6 +220,20 @@ cat .env
 - **Video privado**: No se pueden descargar videos privados
 - **Copyright**: Algunos videos tienen restricciones
 
+### Error de codificación (Unicode/UTF-8) en Docker
+
+Si ves errores de codificación durante `docker-compose build` o al ejecutar el contenedor:
+
+```bash
+# reconstruye sin caché
+docker-compose build --no-cache
+
+# levanta servicios nuevamente
+docker-compose up -d
+```
+
+Este proyecto ya fuerza UTF-8 en los contenedores (`LANG`, `LC_ALL`, `PYTHONUTF8`, `PYTHONIOENCODING`) para evitar fallos por locale/codificación en entornos Linux mínimos.
+
 ### El contenedor se reinicia constantemente
 
 ```bash
