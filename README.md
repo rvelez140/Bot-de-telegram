@@ -220,6 +220,36 @@ cat .env
 - **Video privado**: No se pueden descargar videos privados
 - **Copyright**: Algunos videos tienen restricciones
 
+### Error de codificación (Unicode/UTF-8) en Docker
+
+Si ves errores de codificación durante `docker-compose build` o al ejecutar el contenedor:
+
+```bash
+# reconstruye sin caché
+docker-compose build --no-cache
+
+# levanta servicios nuevamente
+docker-compose up -d
+```
+
+Este proyecto ya fuerza UTF-8 en los contenedores (`LANG`, `LC_ALL`, `PYTHONUTF8`, `PYTHONIOENCODING`) para evitar fallos por locale/codificación en entornos Linux mínimos.
+
+### Error instalando `openai-whisper` (`No module named 'pkg_resources'`)
+
+Si en el build aparece un error como:
+
+```text
+ModuleNotFoundError: No module named 'pkg_resources'
+ERROR: Failed to build 'openai-whisper' when getting requirements to build wheel
+```
+
+La imagen ya está ajustada para instalar `setuptools`/`wheel` y usar `--no-build-isolation` al instalar dependencias. Si vienes de caché antigua, reconstruye así:
+
+```bash
+docker-compose build --no-cache
+docker-compose up -d
+```
+
 ### El contenedor se reinicia constantemente
 
 ```bash

@@ -1,6 +1,8 @@
 import os
 import logging
 import asyncio
+import math
+import sqlite3
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes, ConversationHandler
 import yt_dlp
@@ -23,6 +25,8 @@ logger = logging.getLogger(__name__)
 BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 DOWNLOAD_DIR = '/downloads'
 WHISPER_MODEL = None  # Se carga bajo demanda
+DATABASE_PATH = os.getenv('BOT_DATABASE_PATH', os.path.join(DOWNLOAD_DIR, 'bot_sessions.db'))
+TWITTER_COOKIE_TTL_HOURS = int(os.getenv('TWITTER_COOKIE_TTL_HOURS', '48'))
 
 # Límites de Telegram
 MAX_FILE_SIZE = 2000 * 1024 * 1024  # 2GB en bytes
@@ -39,6 +43,94 @@ user_twitter_cookies = {}
 
 # Estados para el ConversationHandler de login
 WAITING_USERNAME, WAITING_PASSWORD = range(2)
+
+
+def log_event(event, **kwargs):
+    """Logging estructurado para facilitar observabilidad."""
+    payload = {'event': event, **kwargs}
+    logger.info(json.dumps(payload, ensure_ascii=False, default=str))
+
+
+def init_bot_db():
+    """Inicializa la base de datos local para persistencia de sesiones."""
+    conn = sqlite3.connect(DATABASE_PATH)
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS twitter_sessions (
+            user_id INTEGER PRIMARY KEY,
+            cookies TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            expires_at TIMESTAMP NOT NULL
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+
+def save_twitter_session(user_id, cookies):
+    expires_at = datetime.utcnow() + timedelta(hours=TWITTER_COOKIE_TTL_HOURS)
+    conn = sqlite3.connect(DATABASE_PATH)
+    cursor = conn.cursor()
+    cursor.execute(
+        '''
+        INSERT INTO twitter_sessions (user_id, cookies, expires_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(user_id) DO UPDATE SET
+            cookies=excluded.cookies,
+            created_at=CURRENT_TIMESTAMP,
+            expires_at=excluded.expires_at
+        ''',
+        (user_id, cookies, expires_at.isoformat())
+    )
+    conn.commit()
+    conn.close()
+
+
+def load_twitter_session(user_id):
+    conn = sqlite3.connect(DATABASE_PATH)
+    cursor = conn.cursor()
+    cursor.execute(
+        'SELECT cookies, expires_at FROM twitter_sessions WHERE user_id = ?',
+        (user_id,)
+    )
+    row = cursor.fetchone()
+    conn.close()
+
+    if not row:
+        return None
+
+    cookies, expires_at = row
+    if datetime.utcnow() >= datetime.fromisoformat(expires_at):
+        delete_twitter_session(user_id)
+        return None
+
+    return cookies
+
+
+def delete_twitter_session(user_id):
+    conn = sqlite3.connect(DATABASE_PATH)
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM twitter_sessions WHERE user_id = ?', (user_id,))
+    conn.commit()
+    conn.close()
+
+
+def purge_expired_sessions():
+    conn = sqlite3.connect(DATABASE_PATH)
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM twitter_sessions WHERE expires_at <= ?', (datetime.utcnow().isoformat(),))
+    conn.commit()
+    conn.close()
+
+
+def safe_remove(path):
+    if not path:
+        return
+    try:
+        if os.path.exists(path):
+            os.remove(path)
+    except Exception as e:
+        logger.warning(f"No se pudo eliminar archivo temporal {path}: {e}")
 
 async def generate_twitter_cookies(username, password):
     """Genera cookies de X/Twitter usando Playwright"""
@@ -79,7 +171,7 @@ async def generate_twitter_cookies(username, password):
                 # Esperar a que cargue la página principal (verificar que el login fue exitoso)
                 try:
                     await page.wait_for_selector('[data-testid="primaryColumn"]', timeout=15000)
-                except:
+                except Exception:
                     # Si no aparece el elemento esperado, puede que requiera verificación adicional
                     pass
 
@@ -197,7 +289,7 @@ class VideoDownloader:
                 check=True
             )
             return float(result.stdout.strip())
-        except:
+        except Exception:
             return 3600  # Default 1 hora si no se puede obtener
     
     async def download_image(self, url, chat_id):
@@ -246,8 +338,9 @@ class VideoDownloader:
             }
     
     async def download_video(self, url, chat_id, user_id=None):
-        """Descarga el video usando yt-dlp"""
+        """Descarga el video usando yt-dlp con reintentos para errores transitorios."""
         output_path = os.path.join(DOWNLOAD_DIR, f'{chat_id}_%(title)s.%(ext)s')
+        cookies_file = None
 
         ydl_opts = {
             'format': 'best[ext=mp4]/best',
@@ -257,9 +350,7 @@ class VideoDownloader:
             'extract_flat': False,
             'ignoreerrors': False,
             'nocheckcertificate': True,
-            # Limitar tamaño para Telegram (50MB)
             'max_filesize': 50 * 1024 * 1024,
-            # Headers para evitar bloqueos
             'http_headers': {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -270,92 +361,90 @@ class VideoDownloader:
 
         platform = self.get_platform(url)
 
-        # Configuraciones específicas por plataforma
         if platform == 'tiktok':
             ydl_opts['format'] = 'best[ext=mp4]/best'
-            # TikTok específico
             ydl_opts['extractor_args'] = {'tiktok': {'api_hostname': 'api22-normal-c-useast2a.tiktokv.com'}}
         elif platform == 'instagram':
             ydl_opts['format'] = 'best[ext=mp4]/best'
-            # Instagram necesita cookies para cuentas privadas
         elif platform == 'youtube':
             ydl_opts['format'] = 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best'
-            # Configuración adicional para evitar detección de bot en YouTube
             ydl_opts['extractor_args'] = {
                 'youtube': {
                     'player_client': ['android', 'web'],
                     'skip': ['hls', 'dash']
                 }
             }
-            # Intentar usar cookies si existe un archivo cookies.txt
-            cookies_file = '/app/cookies.txt'
-            if os.path.exists(cookies_file) and os.path.getsize(cookies_file) > 10:
-                ydl_opts['cookiefile'] = cookies_file
+            default_cookies_file = '/app/cookies.txt'
+            if os.path.exists(default_cookies_file) and os.path.getsize(default_cookies_file) > 10:
+                ydl_opts['cookiefile'] = default_cookies_file
         elif platform == 'twitter':
-            # Configuración específica para Twitter/X
             ydl_opts['format'] = 'best[ext=mp4]/best'
-            # Añadir extractor args específicos para Twitter
             ydl_opts['extractor_args'] = {
                 'twitter': {
                     'api': ['syndication', 'graphql']
                 }
             }
 
-            # Usar cookies del usuario si están disponibles
-            if user_id and user_id in user_twitter_cookies:
-                # Crear archivo temporal de cookies para este usuario
+            user_cookies = user_twitter_cookies.get(user_id)
+            if user_id and not user_cookies:
+                user_cookies = load_twitter_session(user_id)
+                if user_cookies:
+                    user_twitter_cookies[user_id] = user_cookies
+
+            if user_id and user_cookies:
                 cookies_file = os.path.join(DOWNLOAD_DIR, f'cookies_{user_id}.txt')
-                with open(cookies_file, 'w') as f:
-                    f.write(user_twitter_cookies[user_id])
+                with open(cookies_file, 'w', encoding='utf-8') as f:
+                    f.write(user_cookies)
                 ydl_opts['cookiefile'] = cookies_file
-                logger.info(f"Usando cookies de usuario {user_id} para Twitter")
+                log_event('twitter_cookie_used', user_id=user_id)
             else:
-                # No usar cookies del navegador por defecto
                 ydl_opts['cookiesfrombrowser'] = None
 
-            # Forzar IPv4 para evitar problemas de conexión
             ydl_opts['source_address'] = '0.0.0.0'
-        
-        try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=True)
-                filename = ydl.prepare_filename(info)
-                
-                # Si el archivo no existe con la extensión esperada, buscar variantes
-                if not os.path.exists(filename):
-                    base = os.path.splitext(filename)[0]
-                    for ext in ['.mp4', '.mkv', '.webm', '.mov']:
-                        alt_filename = base + ext
-                        if os.path.exists(alt_filename):
-                            filename = alt_filename
-                            break
-                
-                # Verificar tamaño y dividir si es necesario
-                file_size = os.path.getsize(filename)
-                parts = []
-                
-                if file_size > MAX_FILE_SIZE:
-                    logger.info(f"Archivo muy grande ({file_size / (1024*1024):.2f}MB), dividiendo...")
-                    parts = self.split_video(filename)
-                else:
-                    parts = [filename]
-                
-                return {
-                    'success': True,
-                    'filename': filename,
-                    'parts': parts,
-                    'title': info.get('title', 'video'),
-                    'platform': platform,
-                    'file_size': file_size,
-                    'type': 'video'
-                }
-        except Exception as e:
-            logger.error(f"Error descargando video: {str(e)}")
-            return {
-                'success': False,
-                'error': str(e)
-            }
 
+        max_attempts = 3
+        for attempt in range(1, max_attempts + 1):
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(url, download=True)
+                    filename = ydl.prepare_filename(info)
+
+                    if not os.path.exists(filename):
+                        base = os.path.splitext(filename)[0]
+                        for ext in ['.mp4', '.mkv', '.webm', '.mov']:
+                            alt_filename = base + ext
+                            if os.path.exists(alt_filename):
+                                filename = alt_filename
+                                break
+
+                    file_size = os.path.getsize(filename)
+                    if file_size > MAX_FILE_SIZE:
+                        logger.info(f"Archivo muy grande ({file_size / (1024*1024):.2f}MB), dividiendo...")
+                        parts = self.split_video(filename)
+                    else:
+                        parts = [filename]
+
+                    log_event('download_success', platform=platform, user_id=user_id, attempt=attempt)
+                    return {
+                        'success': True,
+                        'filename': filename,
+                        'parts': parts,
+                        'title': info.get('title', 'video'),
+                        'platform': platform,
+                        'file_size': file_size,
+                        'type': 'video'
+                    }
+            except Exception as e:
+                log_event('download_error', platform=platform, user_id=user_id, attempt=attempt, error=str(e))
+                if attempt < max_attempts:
+                    await asyncio.sleep(1.5 * attempt)
+                    continue
+                return {
+                    'success': False,
+                    'error': str(e)
+                }
+            finally:
+                safe_remove(cookies_file)
     async def extract_audio(self, video_path):
         """Extrae el audio de un video"""
         try:
@@ -502,7 +591,9 @@ async def login_twitter_start(update: Update, context: ContextTypes.DEFAULT_TYPE
     user_id = update.effective_user.id
 
     # Verificar si ya tiene sesión activa
-    if user_id in user_twitter_cookies:
+    session_cookies = user_twitter_cookies.get(user_id) or load_twitter_session(user_id)
+
+    if session_cookies:
         keyboard = [
             [
                 InlineKeyboardButton("✅ Sí, reemplazar", callback_data=f"replace_login_{user_id}"),
@@ -557,7 +648,7 @@ async def receive_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Eliminar el mensaje con la contraseña inmediatamente
     try:
         await update.message.delete()
-    except:
+    except Exception:
         pass
 
     status_message = await update.effective_chat.send_message(
@@ -571,8 +662,10 @@ async def receive_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
     result = await generate_twitter_cookies(username, password)
 
     if result['success']:
-        # Guardar cookies del usuario
+        # Guardar cookies del usuario en memoria y persistencia local
         user_twitter_cookies[user_id] = result['cookies']
+        save_twitter_session(user_id, result['cookies'])
+        log_event('twitter_login_success', user_id=user_id)
 
         await status_message.edit_text(
             "✅ *¡Login exitoso!*\n\n"
@@ -606,17 +699,18 @@ async def logout_twitter(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Cierra la sesión de X/Twitter"""
     user_id = update.effective_user.id
 
-    if user_id in user_twitter_cookies:
+    session_cookies = user_twitter_cookies.get(user_id) or load_twitter_session(user_id)
+
+    if session_cookies:
         # Eliminar cookies del usuario
-        del user_twitter_cookies[user_id]
+        user_twitter_cookies.pop(user_id, None)
+        delete_twitter_session(user_id)
+        log_event('twitter_logout', user_id=user_id)
 
         # Eliminar archivo de cookies temporal si existe
         cookies_file = os.path.join(DOWNLOAD_DIR, f'cookies_{user_id}.txt')
         if os.path.exists(cookies_file):
-            try:
-                os.remove(cookies_file)
-            except:
-                pass
+            safe_remove(cookies_file)
 
         await update.message.reply_text(
             "✅ *Sesión cerrada correctamente*\n\n"
@@ -798,10 +892,7 @@ async def process_download_only(query, url, platform, chat_id):
             )
 
         # Eliminar archivo temporal
-        try:
-            os.remove(result['filename'])
-        except:
-            pass
+        safe_remove(result['filename'])
 
         # Eliminar mensaje de procesamiento
         await query.delete_message()
@@ -845,10 +936,7 @@ async def process_transcribe_only(query, url, platform, chat_id):
                 parse_mode='Markdown'
             )
             # Limpiar archivo de video
-            try:
-                os.remove(result['filename'])
-            except:
-                pass
+            safe_remove(result['filename'])
             return
 
         # Transcribir audio
@@ -864,11 +952,8 @@ async def process_transcribe_only(query, url, platform, chat_id):
                 parse_mode='Markdown'
             )
             # Limpiar archivos
-            try:
-                os.remove(result['filename'])
-                os.remove(audio_result['audio_path'])
-            except:
-                pass
+            safe_remove(result['filename'])
+            safe_remove(audio_result['audio_path'])
             return
 
         # Enviar transcripción
@@ -901,11 +986,8 @@ async def process_transcribe_only(query, url, platform, chat_id):
             await query.message.reply_text(transcription_text, parse_mode='Markdown')
 
         # Limpiar archivos
-        try:
-            os.remove(result['filename'])
-            os.remove(audio_result['audio_path'])
-        except:
-            pass
+        safe_remove(result['filename'])
+        safe_remove(audio_result['audio_path'])
 
         await query.delete_message()
 
@@ -967,10 +1049,7 @@ async def process_both(query, url, platform, chat_id):
                 f"❌ Error al extraer audio para transcripción:\n`{audio_result['error']}`",
                 parse_mode='Markdown'
             )
-            try:
-                os.remove(result['filename'])
-            except:
-                pass
+            safe_remove(result['filename'])
             return
 
         audio_path = audio_result['audio_path']
@@ -988,11 +1067,8 @@ async def process_both(query, url, platform, chat_id):
                 f"❌ Error al transcribir:\n`{transcription_result['error']}`",
                 parse_mode='Markdown'
             )
-            try:
-                os.remove(result['filename'])
-                os.remove(audio_result['audio_path'])
-            except:
-                pass
+            safe_remove(result['filename'])
+            safe_remove(audio_result['audio_path'])
             return
 
         # Enviar transcripción
@@ -1031,13 +1107,8 @@ async def process_both(query, url, platform, chat_id):
         )
     finally:
         # Limpiar archivos
-        try:
-            if video_path:
-                os.remove(video_path)
-            if audio_path:
-                os.remove(audio_path)
-        except:
-            pass
+        safe_remove(video_path)
+        safe_remove(audio_path)
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Maneja errores"""
@@ -1048,6 +1119,9 @@ def main():
     if not BOT_TOKEN:
         logger.error("TELEGRAM_BOT_TOKEN no está configurado")
         return
+
+    init_bot_db()
+    purge_expired_sessions()
 
     # Crear aplicación
     application = Application.builder().token(BOT_TOKEN).build()

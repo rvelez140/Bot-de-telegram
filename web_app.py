@@ -129,7 +129,7 @@ async def generate_twitter_cookies(username, password):
             # Esperar a que cargue la página principal
             try:
                 await page.wait_for_url('https://twitter.com/home', timeout=30000)
-            except:
+            except Exception:
                 # Intentar con x.com
                 await page.wait_for_url('https://x.com/home', timeout=30000)
 
@@ -179,41 +179,38 @@ def download_video(url, user_id, cookies_str=None):
     Descargar video usando yt-dlp
     Retorna: (success: bool, filepath: str, error_msg: str, is_image: bool)
     """
-    try:
-        # Configuración de yt-dlp
-        ydl_opts = {
-            'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-            'outtmpl': os.path.join(DOWNLOAD_DIR, f'download_{user_id}_%(id)s.%(ext)s'),
-            'quiet': True,
-            'no_warnings': True,
-        }
+    cookies_file = None
+    ydl_opts = {
+        'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+        'outtmpl': os.path.join(DOWNLOAD_DIR, f'download_{user_id}_%(id)s.%(ext)s'),
+        'quiet': True,
+        'no_warnings': True,
+    }
 
-        # Usar cookies si están disponibles
-        if cookies_str:
-            cookies_file = os.path.join(DOWNLOAD_DIR, f'cookies_{user_id}.txt')
-            with open(cookies_file, 'w') as f:
-                f.write(cookies_str)
-            ydl_opts['cookiefile'] = cookies_file
+    if cookies_str:
+        cookies_file = os.path.join(DOWNLOAD_DIR, f'cookies_{user_id}.txt')
+        with open(cookies_file, 'w', encoding='utf-8') as f:
+            f.write(cookies_str)
+        ydl_opts['cookiefile'] = cookies_file
 
-        # Descargar
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            filename = ydl.prepare_filename(info)
-
-            # Verificar si es imagen
-            is_image = filename.lower().endswith(('.jpg', '.jpeg', '.png', '.webp'))
-
-            # Limpiar archivo de cookies temporal
-            if cookies_str:
+    max_attempts = 3
+    for attempt in range(1, max_attempts + 1):
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+                filename = ydl.prepare_filename(info)
+                is_image = filename.lower().endswith(('.jpg', '.jpeg', '.png', '.webp'))
+                return True, filename, None, is_image
+        except Exception as e:
+            if attempt < max_attempts:
+                continue
+            return False, None, str(e), False
+        finally:
+            if cookies_file and os.path.exists(cookies_file):
                 try:
                     os.remove(cookies_file)
-                except:
+                except Exception:
                     pass
-
-            return True, filename, None, is_image
-
-    except Exception as e:
-        return False, None, str(e), False
 
 # ===== Rutas Web =====
 
@@ -444,7 +441,7 @@ def download():
         ''', (user_id, url, platform, os.path.basename(filepath)))
         conn.commit()
         conn.close()
-    except:
+    except Exception:
         pass  # No es crítico si falla el historial
 
     # Retornar archivo para descarga
@@ -462,7 +459,7 @@ def download():
             time.sleep(60)
             try:
                 os.remove(filepath)
-            except:
+            except Exception:
                 pass
 
         threading.Thread(target=cleanup).start()
